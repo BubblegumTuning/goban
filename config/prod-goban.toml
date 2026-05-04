@@ -1,0 +1,33 @@
+# Goban Production Configuration Template
+# Copy this to /opt/goban/config/goban.toml for production deployments
+# Environment variables override these values (GOBAN_CONFIG_PATH, GOBAN_STATIC_PATH, etc.)
+
+port = "8080"
+log_level = "info"  # debug, info, warn, error
+
+# Database configuration - use absolute paths in production
+db_type = "sqlite"
+db_path = "/var/lib/goban/goban.db"
+
+# Static files path - must match deployment location (e.g., Ansible goban_public_dir)
+static_path = "/opt/goban/public"
+
+# PostgreSQL settings (uncomment and configure when using postgres instead of sqlite)
+# db_type = "postgres"
+# db_host = "localhost"
+# db_port = 5432
+# db_user = "goban"
+# db_password = ""  # Better set via DB_PASSWORD env var for security
+# db_name = "goban"
+
+[[boards]]
+id = "human-to-ai"
+title = "Human → AI"
+desc = "Track tasks assigned from human users to AI agents"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]
+
+[[boards]]
+id = "ai-to-human"
+title = "AI → Human"
+desc = "Track tasks assigned from AI agents to human users"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]

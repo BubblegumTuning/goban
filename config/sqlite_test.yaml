@@ -1,0 +1,11 @@
+# SQLite Test Configuration
+port: 8082
+db_type: "sqlite"
+data_dir: "./data_sqlite_test"
+
+# PostgreSQL settings (ignored when db_type is sqlite)
+db_host: "localhost"
+db_port: 5432
+db_user: ""
+db_password: ""
+db_name: ""

@@ -1,0 +1,53 @@
+# Goban Configuration - PostgreSQL Backend Example
+# Use this configuration once PostgreSQL database is set up
+# 
+# To activate: cp config.postgres.yaml config/config.yaml && restart server
+
+port: 8080
+host: "0.0.0.0"
+
+# Database settings - switch from SQLite to PostgreSQL
+db_type: "postgres"  # Change from "sqlite" to "postgres"
+
+# PostgreSQL connection parameters
+db_host: "localhost"       # PostgreSQL host (or IP address)
+db_port: 5432              # Default PostgreSQL port
+db_user: "kanban"          # Database user
+db_password: ""            # Set your password here
+db_name: "goban"         # Target database name
+
+data_dir: "./data"         # Still used for uploads/static files
+log_level: "info"
+archive_days: 14
+
+boards:
+  - name: "Human → AI"
+    columns:
+      - "Backlog"
+      - "To Do"
+      - "In Progress"
+      - "Review"
+      - "Done"
+      - "Cancelled"
+  - name: "AI → Human"
+    columns:
+      - "Backlog"
+      - "To Do"
+      - "In Progress"
+      - "Review"
+      - "Done"
+      - "Cancelled"
+
+default_columns:
+  - id: "backlog"
+    title: "Backlog"
+  - id: "todo"
+    title: "To Do"
+  - id: "inprogress"
+    title: "In Progress"
+  - id: "review"
+    title: "Review"
+  - id: "done"
+    title: "Done"
+  - id: "cancelled"
+    title: "Cancelled"

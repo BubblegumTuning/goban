@@ -1,0 +1,8 @@
+# Compiled binaries
+goban-cli
+goban-cli-*
+*.exe
+
+# IDE files
+.idea/
+.vscode/

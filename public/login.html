@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goban - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="password"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            color: #666;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-login:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: #fee;
+            color: #c00;
+            padding: 12px 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .loading {
+            text-align: center;
+            color: #667eea;
+            font-size: 14px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .loading.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>Goban</h1>
+            <p>Kanban Board Management System</p>
+        </div>
+
+        <div id="error-message" class="error-message"></div>
+
+        <form id="login-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="remember-me" name="remember_me">
+                <label for="remember-me">Remember me (30 days)</label>
+            </div>
+
+            <button type="submit" class="btn-login" id="login-btn">Login</button>
+        </form>
+
+        <div id="loading" class="loading">Authenticating...</div>
+    </div>
+
+    <script>
+        const loginForm = document.getElementById('login-form');
+        const errorMessage = document.getElementById('error-message');
+        const loadingDiv = document.getElementById('loading');
+        const loginBtn = document.getElementById('login-btn');
+
+        // Check if user is already logged in
+        checkExistingSession();
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Hide previous errors
+            errorMessage.classList.remove('show');
+            
+            // Show loading state
+            loginBtn.disabled = true;
+            loadingDiv.classList.add('show');
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('remember-me').checked;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password,
+                        remember_me: rememberMe
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Store token in localStorage
+                    localStorage.setItem('goban_auth_token', data.access_token);
+                    
+                    // Optionally store user info
+                    if (data.user) {
+                        localStorage.setItem('goban_user', JSON.stringify(data.user));
+                    }
+
+                    // Redirect to dashboard/board page
+                    window.location.href = '/';
+                } else {
+                    showError(data.message || data.error || 'Login failed. Please check your credentials.');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Network error. Please try again.');
+            } finally {
+                loginBtn.disabled = false;
+                loadingDiv.classList.remove('show');
+            }
+        });
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.add('show');
+        }
+
+        function checkExistingSession() {
+            const token = localStorage.getItem('goban_auth_token');
+            if (token) {
+                // Optionally verify the token is still valid
+                fetch('/api/auth/check', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.authenticated) {
+                        // User is already logged in, redirect to board
+                        window.location.href = '/';
+                    }
+                })
+                .catch(() => {
+                    // If check fails, just let user login normally
+                    localStorage.removeItem('goban_auth_token');
+                    localStorage.removeItem('goban_user');
+                });
+            }
+        }
+
+        // Allow Enter key to submit form
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginForm.dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,71 @@
+# Compiled binaries (root-level build artifacts)
+goban*
+!goban-*.*  # keep YAML/MD etc
+!goban-cli/
+!goban-user-cli/
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of go coverage tools
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# Database files (SQLite)
+*.db
+*.db-wal
+*.db-shm
+*_test.db
+*_test.db-wal
+*_test.db-shm
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+
+# Build output directory
+bin/
+
+# Fiber compressed cache files (generated at runtime)
+*.fiber.gz
+
+# Config files with potential secrets — use *.example templates instead
+goban.toml
+!goban.toml.example
+goban-cli/config.yaml
+!goban-cli/config.yaml.example
+cmd/create_test_user/*

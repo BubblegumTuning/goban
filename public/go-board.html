@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Goban — Go Board</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iOCIgZmlsbD0iI2RjYjM1YyIvPgogIDx0ZXh0IHg9IjE3IiB5PSI0NCIgZm9udC1zaXplPSIzMiI+JiN4MjZBQjs8L3RleHQ+CiAgPHRleHQgeD0iMzkiIHk9IjQ0IiBmb250LXNpemU9IjMyIj4mI3gyNkFBOzwvdGV4dD4KPC9zdmc+">
+<style>
+:root {
+  --board-color: #dcb35c;
+  --grid-line: #8b6914;
+  --black-stone: #1a1a1a;
+  --white-stone: #f0ece2;
+  --bg-dark: #1e1e2e;
+  --bg-panel: #2d2d3f;
+  --text-primary: #e0ddd5;
+  --text-secondary: #9896a4;
+  --accent: #7c6bc4;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.app-header {
+  width: 100%;
+  padding: 12px 24px;
+  background: var(--bg-panel);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.app-header h1 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+
+.main-container {
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  max-width: 1400px;
+  width: 100%;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.board-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.board-wrapper {
+  position: relative;
+  background: var(--board-color);
+  border-radius: 8px;
+  padding: 40px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.board-canvas {
+  display: grid;
+  cursor: pointer;
+  user-select: none;
+}
+
+.intersection {
+  width: var(--cell-size, 28px);
+  height: var(--cell-size, 28px);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stone {
+  width: calc(var(--cell-size, 28px) * 0.9);
+  height: calc(var(--cell-size, 28px) * 0.9);
+  border-radius: 50%;
+  position: absolute;
+  transition: transform 0.1s ease;
+}
+
+.stone.black {
+  background: radial-gradient(circle at 35% 35%, #4a4a4a, var(--black-stone));
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+
+.stone.white {
+  background: radial-gradient(circle at 35% 35%, #ffffff, var(--white-stone));
+  box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.stone.last-move::after {
+  content: '';
+  position: absolute;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.stone.black.last-move::after { background: #ff4444; }
+.stone.white.last-move::after { background: #222; }
+
+/* Side panel */
+.side-panel {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-card {
+  background: var(--bg-panel);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.panel-card h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.game-controls { display: flex; flex-direction: column; gap: 8px; }
+
+.btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover { background: #6b5ab4; }
+.btn-secondary { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.btn-secondary:hover { background: rgba(255,255,255,0.18); }
+.btn-danger { background: #c0392b; color: white; }
+.btn-danger:hover { background: #a93226; }
+
+.input-row { display: flex; gap: 8px; margin-bottom: 4px; }
+
+.input-field {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.input-field:focus { outline: none; border-color: var(--accent); }
+
+.game-id-display {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.turn-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.turn-dot {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2);
+}
+
+.turn-dot.black { background: var(--black-stone); }
+.turn-dot.white { background: var(--white-stone); }
+
+.prisoners { display: flex; gap: 16px; margin-top: 8px; }
+
+.prisoner-count {
+  font-size: 0.85rem;
+}
+
+.move-history {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+}
+
+.move-entry { padding: 2px 4px; border-radius: 3px; }
+.move-entry:hover { background: rgba(255,255,255,0.05); }
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-playing { background: #27ae60; color: white; }
+.status-passed { background: #f39c12; color: white; }
+.status-completed { background: var(--accent); color: white; }
+.status-resigned { background: #c0392b; color: white; }
+
+.message-bar {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: center;
+  min-height: 36px;
+}
+
+.message-error { background: rgba(231,76,60,0.2); color: #e74c3c; }
+.message-success { background: rgba(39,174,96,0.2); color: #2ecc71; }
+.message-info { background: rgba(52,152,219,0.2); color: #3498db; }
+
+.score-result { text-align: center; padding: 8px 0; }
+.score-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.9rem; }
+.score-winner { color: #2ecc71; font-weight: bold; font-size: 1.1rem; margin-top: 8px; }
+
+/* Coordinate labels */
+.coord-labels-h, .coord-labels-v {
+  position: absolute;
+  display: flex;
+  font-size: 0.65rem;
+  color: var(--grid-line);
+}
+.coord-labels-h { bottom: 12px; left: 40px; width: calc(100% - 80px); justify-content: space-around; }
+.coord-labels-v { top: 40px; left: 8px; flex-direction: column; height: calc(100% - 80px); justify-content: space-around; align-items: center; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .main-container { flex-direction: column; align-items: center; }
+  .side-panel { width: 100%; max-width: 500px; }
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>Goban — Go Board</h1>
+  <span id="statusBadge" class="status-badge status-playing">Playing</span>
+</header>
+
+<div class="main-container">
+  <!-- Game board -->
+  <div class="board-section">
+    <div class="message-bar" id="messageBar"></div>
+    <div class="board-wrapper">
+      <div id="coordLabelsV" class="coord-labels-v"></div>
+      <div class="board-canvas" id="boardCanvas"></div>
+      <div id="coordLabelsH" class="coord-labels-h"></div>
+    </div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side-panel">
+    <!-- Game setup -->
+    <div class="panel-card">
+      <h3>Game Setup</h3>
+      <div class="game-controls">
+        <button class="btn btn-primary" onclick="createNewGame()">+ New Game</button>
+        <div class="input-row">
+          <input type="text" id="joinIdInput" class="input-field" placeholder="Enter game ID to join...">
+          <button class="btn btn-secondary" onclick="joinExistingGame()">Join</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game info -->
+    <div class="panel-card" id="gameInfoCard" style="display:none;">
+      <h3>Game Info</h3>
+      <p class="game-id-display">ID: <span id="gameIdDisplay">—</span></p>
+      <div class="turn-indicator">
+        <div class="turn-dot black" id="turnDot"></div>
+        <span id="turnText">Black's turn</span>
+      </div>
+      <div class="prisoners">
+        <span class="prisoner-count">&#9679; Black captures: <strong id="blackPrisoners">0</strong></span>
+        <span class="prisoner-count">&#9675; White captures: <strong id="whitePrisoners">0</strong></span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="panel-card" id="actionsCard" style="display:none;">
+      <h3>Actions</h3>
+      <div class="game-controls">
+        <button class="btn btn-secondary" onclick="passTurn()">Pass Turn</button>
+        <button class="btn btn-danger" onclick="resignGame()">Resign</button>
+        <button class="btn btn-primary" onclick="calculateScore()">Calculate Score</button>
+      </div>
+    </div>
+
+    <!-- Score -->
+    <div class="panel-card" id="scoreCard" style="display:none;">
+      <h3>Score</h3>
+      <div class="score-result" id="scoreResult"></div>
+    </div>
+
+    <!-- Move history -->
+    <div class="panel-card" id="historyCard" style="display:none;">
+      <h3>Move History (<span id="moveCount">0</span>)</h3>
+      <div class="move-history" id="moveHistory"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "/api/v1/go";
+let currentGameId = null;
+let boardSize = 19;
+let sseConnection = null;
+
+// Coordinate labels: A-T (skip J), 1-19
+function colLabel(col) {
+  const letters = "ABCDEFGHJKLMNOPQRST"; // J is skipped in Go notation
+  return letters[col] || "?";
+}
+
+function rowLabel(row) {
+  return String(boardSize - row); // Row 0 = line 19 (top), but we display top-to-bottom as 1-19
+}
+
+// Initialize board grid
+function initBoard() {
+  const canvas = document.getElementById("boardCanvas");
+  canvas.innerHTML = "";
+  canvas.style.gridTemplateColumns = `repeat(${boardSize}, var(--cell-size, 28px))`;
+  canvas.style.gridTemplateRows = `repeat(${boardSize}, var(--cell-size, 28px))`;
+
+  // Set cell size based on viewport
+  const maxBoardWidth = Math.min(window.innerWidth - 400, 560);
+  const cellSize = Math.floor((maxBoardWidth - 10) / boardSize);
+  canvas.style.setProperty("--cell-size", cellSize + "px");
+
+  for (let r = 0; r < boardSize; r++) {
+    for (let c = 0; c < boardSize; c++) {
+      const div = document.createElement("div");
+      div.className = "intersection";
+      div.dataset.row = r;
+      div.dataset.col = c;
+      div.onclick = () => handleIntersectionClick(r, c);
+
+      // Draw grid lines
+      drawGridLines(div, r, c);
+      canvas.appendChild(div);
+    }
+  }
+
+  // Coordinate labels
+  const hLabels = document.getElementById("coordLabelsH");
+  const vLabels = document.getElementById("coordLabelsV");
+  hLabels.innerHTML = "";
+  vLabels.innerHTML = "";
+  for (let i = 0; i < boardSize; i++) {
+    const hSpan = document.createElement("span");
+    hSpan.textContent = colLabel(i);
+    hLabels.appendChild(hSpan);
+    const vSpan = document.createElement("span");
+    vSpan.textContent = String(boardSize - i);
+    vLabels.appendChild(vSpan);
+  }
+}
+
+function drawGridLines(div, r, c) {
+  // Horizontal line (top edge of cell)
+  const hTop = document.createElement("div");
+  hTop.style.cssText = "position:absolute;top:50%;left:0;right:0;height:1px;background:#8b6914;";
+  div.appendChild(hTop);
+
+  // Vertical line (left edge of cell)
+  const vLeft = document.createElement("div");
+  vLeft.style.cssText = "position:absolute;left:50%;top:0;bottom:0;width:1px;background:#8b6914;";
+  div.appendChild(vLeft);
+
+  // Star points (hoshi) for standard board sizes
+  const starPoints = {
+    19: [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]],
+    13: [[3,3],[3,6],[3,9],[6,3],[6,6],[6,9],[9,3],[9,6],[9,9]],
+    9:  [[2,2],[2,4],[2,6],[4,2],[4,4],[4,6],[6,2],[6,4],[6,6]]
+  };
+
+  if (starPoints[boardSize]) {
+    for (const [sr, sc] of starPoints[boardSize]) {
+      if (r === sr && c === sc) {
+        const dot = document.createElement("div");
+        dot.style.cssText = "position:absolute;width:6px;height:6px;border-radius:50%;background:#8b6914;transform:translate(-50%,-50%);z-index:1;";
+        div.appendChild(dot);
+      }
+    }
+  }
+}
+
+// Render board state from game data
+function renderBoard(game) {
+  const canvas = document.getElementById("boardCanvas");
+  const intersections = canvas.querySelectorAll(".intersection");
+  const lastMove = game.move_history.length > 0 ? game.move_history[game.move_history.length - 1] : null;
+
+  intersections.forEach(div => {
+    const r = parseInt(div.dataset.row);
+    const c = parseInt(div.dataset.col);
+    // Remove existing stones
+    div.querySelectorAll(".stone").forEach(s => s.remove());
+
+    if (game.board[r][c] === 1 || game.board[r][c] === 2) {
+      const stone = document.createElement("div");
+      stone.className = "stone" + (game.board[r][c] === 1 ? " black" : " white");
+
+      // Mark last move
+      if (lastMove && !lastMove.is_pass && lastMove.point.row === r && lastMove.point.col === c) {
+        stone.classList.add("last-move");
+      }
+
+      div.appendChild(stone);
+    }
+  });
+}
+
+function updateGameInfo(game) {
+  document.getElementById("gameIdDisplay").textContent = game.id;
+  document.getElementById("turnText").textContent = (game.current_turn + "'s turn").replace(/^./, s => s.toUpperCase());
+  document.getElementById("blackPrisoners").textContent = game.black_prisoners;
+  document.getElementById("whitePrisoners").textContent = game.white_prisoners;
+
+  const turnDot = document.getElementById("turnDot");
+  turnDot.className = "turn-dot " + (game.current_turn === "black" ? "black" : "white");
+
+  // Status badge
+  const badge = document.getElementById("statusBadge");
+  badge.textContent = game.status.charAt(0).toUpperCase() + game.status.slice(1);
+  badge.className = "status-badge status-" + game.status;
+
+  // Move history
+  updateMoveHistory(game.move_history);
+}
+
+function updateMoveHistory(history) {
+  const container = document.getElementById("moveHistory");
+  document.getElementById("moveCount").textContent = history.length;
+  container.innerHTML = "";
+
+  for (let i = 0; i < history.length; i++) {
+    const move = history[i];
+    const entry = document.createElement("div");
+    entry.className = "move-entry";
+
+    let label = `${i + 1}. ${move.player}`;
+    if (move.is_pass) {
+      label += " — Pass";
+    } else {
+      const coord = colLabel(move.point.col) + String(boardSize - move.point.row);
+      label += ` @ ${coord}`;
+      if (move.captures && move.captures.length > 0) {
+        label += ` (+${move.captures.length})`;
+      }
+    }
+
+    entry.textContent = label;
+    container.appendChild(entry);
+  }
+
+  // Scroll to bottom
+  container.scrollTop = container.scrollHeight;
+}
+
+// API calls
+async function apiFetch(endpoint, options) {
+  try {
+    const resp = await fetch(API + endpoint, {
+      headers: { "Content-Type": "application/json" },
+      ...options
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error || `HTTP ${resp.status}`);
+    return await resp.json();
+  } catch (err) {
+    showMessage(err.message, "error");
+    throw err;
+  }
+}
+
+// SSE real-time connection for opponent moves
+let sseReconnectTimer = null;
+
+function disconnectSSE() {
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+  // Clear any pending reconnect timer
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer);
+    sseReconnectTimer = null;
+  }
+}
+
+function connectSSE(gameId) {
+  disconnectSSE();
+  try {
+    sseConnection = new EventSource(`/api/v1/go/games/${gameId}/events`);
+
+    sseConnection.addEventListener('update', function(event) {
+      const data = JSON.parse(event.data);
+      refreshGameState();
+    });
+
+    // Note: Do NOT manually reconnect here. EventSource has built-in automatic
+    // reconnection that fires on error with exponential backoff (~3s, ~15s, etc).
+    // Adding a manual setTimeout-based reconnect creates duplicate connections
+    // and race conditions where one player's subscription overwrites another's.
+    sseConnection.onerror = function(err) {
+      console.warn("SSE connection error for game:", gameId, "- auto-reconnecting...");
+      // EventSource will automatically retry; no action needed
+    };
+
+    console.log("SSE connected for game:", gameId);
+  } catch (e) {
+    console.warn("SSE connection failed:", e.message);
+  }
+}
+
+// Refresh full game state from server
+async function refreshGameState() {
+  if (!currentGameId) return;
+  try {
+    const game = await fetch(API + "/games/" + currentGameId, {
+      headers: { "Content-Type": "application/json" }
+    });
+    if (game.ok) {
+      const data = await game.json();
+      renderBoard(data);
+      updateGameInfo(data);
+    }
+  } catch (e) { /* silently ignore refresh errors */ }
+}
+
+function showMessage(text, type) {
+  const bar = document.getElementById("messageBar");
+  bar.textContent = text;
+  bar.className = "message-bar message-" + type;
+  setTimeout(() => { bar.textContent = ""; }, 5000);
+}
+
+// Game actions
+async function createNewGame() {
+  try {
+    const data = await apiFetch("/games", { method: "POST" });
+    currentGameId = data.game_id;
+    showMessage("Game created: " + data.game_id, "success");
+    document.getElementById("joinIdInput").value = data.game_id;
+
+    // Load full game state
+    const game = await apiFetch("/games/" + currentGameId);
+    boardSize = game.board_size || 19;
+    initBoard();
+    renderBoard(game);
+    updateGameInfo(game);
+
+    showGameUI(true);
+    connectSSE(currentGameId);
+  } catch (e) { /* handled by showMessage */ }
+}
+
+async function joinExistingGame() {
+  const id = document.getElementById("joinIdInput").value.trim();
+  if (!id) return;
+
+  try {
+    const game = await apiFetch("/games/" + id);
+    currentGameId = id;
+    boardSize = game.board_size || 19;
+    initBoard();
+    renderBoard(game);
+    updateGameInfo(game);
+    showGameUI(true);
+    connectSSE(currentGameId);
+    showMessage("Joined: " + id, "success");
+  } catch (e) { /* handled */ }
+}
+
+async function loadGame() {
+  if (!currentGameId) return;
+  try {
+    const game = await apiFetch("/games/" + currentGameId);
+    renderBoard(game);
+    updateGameInfo(game);
+  } catch (e) { /* ignore — game may not exist */ }
+}
+
+async function handleIntersectionClick(row, col) {
+  if (!currentGameId) return;
+  try {
+    const game = await apiFetch("/games/" + currentGameId);
+    const data = await apiFetch("/games/" + currentGameId + "/move", {
+      method: "POST",
+      body: JSON.stringify({ row, col, player: game.current_turn })
+    });
+    renderBoard(data);
+    updateGameInfo(data);
+
+    if (data.status === "completed") {
+      showMessage("Both players passed — game complete!", "info");
+    } else {
+      showMessage((game.current_turn + " played").replace(/^./, s => s.toUpperCase()), "success");
+    }
+  } catch (e) { /* handled */ }
+}
+
+async function passTurn() {
+  if (!currentGameId) return;
+  try {
+    const game = await apiFetch("/games/" + currentGameId);
+    const data = await apiFetch("/games/" + currentGameId + "/pass", {
+      method: "POST",
+      body: JSON.stringify({ player: game.current_turn })
+    });
+    renderBoard(data.game);
+    updateGameInfo(data.game);
+
+    if (data.passes >= 2) {
+      showMessage("Both players passed — game complete!", "info");
+    } else {
+      showMessage((game.current_turn + " passed").replace(/^./, s => s.toUpperCase()), "success");
+    }
+  } catch (e) { /* handled */ }
+}
+
+async function resignGame() {
+  if (!currentGameId || !confirm("Are you sure you want to resign?")) return;
+  try {
+    const game = await apiFetch("/games/" + currentGameId);
+    const data = await apiFetch("/games/" + currentGameId + "/resign", {
+      method: "POST",
+      body: JSON.stringify({ player: game.current_turn })
+    });
+    renderBoard(data.game);
+    updateGameInfo(data.game);
+    showMessage(data.resigned + " resigned. " + data.winner + " wins!", "info");
+  } catch (e) { /* handled */ }
+}
+
+async function calculateScore() {
+  if (!currentGameId) return;
+  try {
+    const data = await apiFetch("/games/" + currentGameId + "/score");
+    const score = data.score;
+    document.getElementById("scoreCard").style.display = "block";
+    document.getElementById("scoreResult").innerHTML = `
+      <div class="score-row"><span>Black territory</span><span>${score.black_territory}</span></div>
+      <div class="score-row"><span>White territory</span><span>${score.white_territory}</span></div>
+      <div class="score-row"><span>Black prisoners (captured by White)</span><span>${score.black_prisoners}</span></div>
+      <div class="score-row"><span>White prisoners (captured by Black)</span><span>${score.white_prisoners}</span></div>
+      <div class="score-row"><span>Komi</span><span>${score.komi}</span></div>
+      <hr style="border-color:rgba(255,255,255,0.1);margin:8px 0;">
+      <div class="score-row"><span><strong>Black total</strong></span><span><strong>${score.black_total}</strong></span></div>
+      <div class="score-row"><span><strong>White total</strong></span><span><strong>${score.white_total}</strong></span></div>
+      <div class="score-winner">${score.winner.charAt(0).toUpperCase() + score.winner.slice(1)} wins by ${score.margin} points!</div>
+    `;
+  } catch (e) { /* handled */ }
+}
+
+function showGameUI(show) {
+  ["gameInfoCard", "actionsCard", "historyCard"].forEach(id => {
+    document.getElementById(id).style.display = show ? "block" : "none";
+  });
+  if (!show) {
+    document.getElementById("scoreCard").style.display = "none";
+  }
+}
+
+// Initialize on load
+initBoard();
+</script>
+</body>
+</html>

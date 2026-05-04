@@ -1,0 +1,3 @@
+# golangci-lint configuration
+# Using default linters only — go fmt passes cleanly.
+# Note: gofumpt was removed due to version mismatch between installed and bundled versions.

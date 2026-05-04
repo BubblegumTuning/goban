@@ -1,0 +1,32 @@
+# Goban Configuration File
+# Environment variables override these values
+# 
+# Priority: Environment variables > This config file > Hardcoded defaults
+
+port = "8080"
+debug = false  # Enable debug logging (gates DEBUG log.Printf calls)
+db_path = "./goban.db"
+db_type = "sqlite"  # or "postgres"
+
+# PostgreSQL settings (modify when using postgres)
+db_host = "localhost"
+db_port = 5432
+db_user = "goban"  # Change to your PostgreSQL user
+db_password = ""  # Better set via DB_PASSWORD env var for security
+db_name = "goban"
+
+# JWT signing secret for web UI authentication
+# Override with GOBAN_JWT_SECRET environment variable in production
+jwt_secret = "your-jwt-secret-here-change-in-production"
+
+[[boards]]
+id = "human-to-ai"
+title = "Human → AI"
+desc = "Track tasks assigned from human users to AI agents"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]
+
+[[boards]]
+id = "ai-to-human"
+title = "AI → Human"
+desc = "Track tasks assigned from AI agents to human users"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]

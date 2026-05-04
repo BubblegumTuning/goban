@@ -1,0 +1,48 @@
+# Goban CLI Configuration File
+# Copy this to ~/.goban-cli/config.yaml or ./config.yaml
+# All values are optional - sensible defaults are provided
+
+# API server configuration
+api:
+  # Base URL of the Goban API server
+  base_url: "http://localhost:8080"
+  
+  # Optional: API token for authentication (if enabled on server)
+  api_token: ""
+  
+  # Request timeout in seconds
+  timeout: 30
+
+# Output formatting configuration
+output:
+  # Format: 'line' for human-readable, 'json' for scripting/AI agents
+  format: "line"
+  
+  # Enable ANSI color codes (set to false for logs/piping)
+  colorize: true
+
+# Retry behavior for transient failures
+retry:
+  # Maximum number of retry attempts before giving up
+  max_attempts: 3
+  
+  # Initial delay between retries in seconds
+  initial_delay: 1
+  
+  # Multiplier for exponential backoff (each retry waits 2x longer)
+  backoff_multiplier: 2
+
+# Environment Variable Overrides
+# You can override any of these settings via environment variables:
+#   GOBAN_API_BASE_URL    -> api.base_url
+#   GOBAN_API_TOKEN       -> api.api_token  
+#   GOBAN_BOARD           -> Default board ID for commands
+#   GOBAN_USER            -> Your username for claiming tickets
+#   GOBAN_OUTPUT_FORMAT   -> output.format ('line' or 'json')
+
+# Command Line Flag Overrides (highest priority)
+# Most commands support these flags to override config/env vars:
+#   --server <url>        Override API server URL
+#   --board <id>          Override default board ID
+#   --user <name>         Override username for claiming
+#   --format <line|json>  Override output format

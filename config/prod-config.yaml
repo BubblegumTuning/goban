@@ -1,0 +1,43 @@
+port: 8080
+host: "0.0.0.0"
+db_type: "sqlite"
+data_dir: "./data"
+log_level: "info"
+archive_days: 14
+
+boards:
+  - name: "Human → AI"
+    columns:
+      - "Backlog"
+      - "To Do"
+      - "In Progress"
+      - "Review"
+      - "Done"
+      - "Cancelled"
+  - name: "AI → Human"
+    columns:
+      - "Backlog"
+      - "To Do"
+      - "In Progress"
+      - "Review"
+      - "Done"
+      - "Cancelled"
+  - name: "Infrastructure"
+    columns:
+      - "Todo"
+      - "In Progress"
+      - "Done"
+
+default_columns:
+  - id: "backlog"
+    title: "Backlog"
+  - id: "todo"
+    title: "To Do"
+  - id: "inprogress"
+    title: "In Progress"
+  - id: "review"
+    title: "Review"
+  - id: "done"
+    title: "Done"
+  - id: "cancelled"
+    title: "Cancelled"
