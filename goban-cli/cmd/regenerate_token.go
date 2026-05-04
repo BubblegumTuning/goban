@@ -60,7 +60,7 @@ Example:
 }
 
 func init() {
-	regenerateTokenCmd.Flags().Int("user-id", 1, "User ID to regenerate token for (1 = primary admin / nanami)")
+	regenerateTokenCmd.Flags().Int("user-id", 1, "User ID to regenerate token for (default: primary admin)")
 	regenerateTokenCmd.Flags().String("host", "kanban01", "SSH host alias or IP for the production server")
 	rootCmd.AddCommand(regenerateTokenCmd)
 }

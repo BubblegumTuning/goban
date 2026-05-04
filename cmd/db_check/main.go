@@ -4,12 +4,17 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	db, err := sql.Open("sqlite3", "/home/nanami/goban/goban.db")
+	dbPath := "./goban.db"
+	if len(os.Args) > 1 {
+		dbPath = os.Args[1]
+	}
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
