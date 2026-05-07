@@ -105,7 +105,12 @@
         // Load archived tickets from API
         async function loadArchive() {
             try {
-                const res = await fetch('/api/archived');
+                const res = await fetch('/api/archived', { headers: getAuthHeaders() });
+                if (!res.ok) {
+                    console.error("Failed to load archive:", res.status, await res.text());
+                    document.getElementById('archiveList').innerHTML = '<p class="text-gray-500 text-center py-8">Error loading archive</p>';
+                    return;
+                }
                 archivedTickets = await res.json();
                 renderArchive();
             } catch (e) {
@@ -143,12 +148,12 @@
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-3 mb-2">
                             <h3 class="text-white font-medium truncate">${escapeHtml(ticket.title || 'Untitled')}</h3>
-                            <span class="text-xs text-gray-500 px-2 py-1 bg-gray-700 rounded">${ticket.board_id || 'unknown'}</span>
+                            <span class="text-xs text-gray-500 px-2 py-1 bg-gray-700 rounded">${escapeHtml(ticket.board_id || 'unknown')}</span>
                         </div>
                         ${ticket.description ? `<p class="text-sm text-gray-400 line-clamp-2">${escapeHtml(ticket.description.substring(0, 200))}${ticket.description.length > 200 ? '...' : ''}</p>` : ''}
                         <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
                             ${ticket.archived_at ? `<span>🗄️ Archived: ${formatDate(ticket.archived_at)}</span>` : ''}
-                            ${ticket.priority ? `<span><span class="${getPriorityColor(ticket.priority)}">${ticket.priority}</span></span>` : ''}
+                            ${ticket.priority ? `<span><span class="${getPriorityColor(ticket.priority)}">${escapeHtml(ticket.priority)}</span></span>` : ''}
                         </div>
                     </div>
                     <button onclick="unarchiveTicket('${ticket.id}')" 
@@ -177,7 +182,7 @@
 		try {
 			const res = await fetch(`/api/unarchive/${ticketId}`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
            body: JSON.stringify({
                         board_id: currentBoardId || ticket.board_id,  // Use currently selected board
                         column: "todo" // Default to To Do when restoring (ticket-8c6759849c1f59ef: audit for hardcoded value + past JS/layout regressions; stable per memory "working over fancy")

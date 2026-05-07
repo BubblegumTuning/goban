@@ -12,6 +12,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	"goban/auth"
 	"goban/config"
 	"goban/handlers"
@@ -81,6 +82,10 @@ func main() {
 
 	// Create Fiber app with middleware
 	app := fiber.New(fiber.Config{AppName: "Goban/" + version.Version})
+
+	// Panic recovery — MUST be first middleware to catch panics from all handlers.
+	// Returns 500 responses instead of crashing the server process.
+	app.Use(recover.New())
 
 	// Debug middleware - only enabled when log_level is "debug"
 	if logFilter.ShouldLog("debug") {

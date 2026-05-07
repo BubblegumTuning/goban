@@ -623,11 +623,16 @@ func (s *SQLiteStore) GetArchivedByAdmin(adminID int64) ([]*models.Ticket, error
 
 // CreateToken inserts a new API token.
 func (s *SQLiteStore) CreateToken(agentName, tokenHash string) (int64, error) {
-	tokenName := fmt.Sprintf("goban-%s", tokenHash[:8])
+	tokenPrefix := "goban-"
+	if len(tokenHash) >= 8 {
+		tokenPrefix += tokenHash[:8]
+	} else if len(tokenHash) > 0 {
+		tokenPrefix += tokenHash
+	}
 
 	result, err := s.db.Exec(`
 		INSERT INTO agent_tokens (agent_name, token_name, token_hash) VALUES (?, ?, ?)
-	`, agentName, tokenName, tokenHash)
+	`, agentName, tokenPrefix, tokenHash)
 	if err != nil {
 		return 0, err
 	}
@@ -638,11 +643,16 @@ func (s *SQLiteStore) CreateToken(agentName, tokenHash string) (int64, error) {
 
 // CreateTokenWithUser creates a new API token linked to an existing user.
 func (s *SQLiteStore) CreateTokenWithUser(userID int64, agentName, tokenHash string) (int64, error) {
-	tokenName := fmt.Sprintf("goban-%s", tokenHash[:8])
+	tokenPrefix := "goban-"
+	if len(tokenHash) >= 8 {
+		tokenPrefix += tokenHash[:8]
+	} else if len(tokenHash) > 0 {
+		tokenPrefix += tokenHash
+	}
 
 	result, err := s.db.Exec(`
 		INSERT INTO agent_tokens (agent_name, token_name, token_hash, user_id) VALUES (?, ?, ?, ?)
-	`, agentName, tokenName, tokenHash, userID)
+	`, agentName, tokenPrefix, tokenHash, userID)
 	if err != nil {
 		return 0, fmt.Errorf("CreateTokenWithUser exec: %w", err)
 	}
@@ -659,12 +669,17 @@ func (s *SQLiteStore) ValidateToken(tokenHash string) (*models.AgentToken, error
 	`, tokenHash)
 
 	var t models.AgentToken
+	var userID sql.NullInt64
 	var createdAtStr, lastUsedStr sql.NullString
 
-	err := row.Scan(&t.ID, &t.AgentName, &t.TokenName, &t.TokenHash, &t.UserID,
+	err := row.Scan(&t.ID, &t.AgentName, &t.TokenName, &t.TokenHash, &userID,
 		&createdAtStr, &lastUsedStr)
 	if err != nil {
 		return nil, err
+	}
+
+	if userID.Valid {
+		t.UserID = userID.Int64
 	}
 
 	t.CreatedAt = parseTimeFromRFC3339(createdAtStr.String)
@@ -1037,18 +1052,12 @@ func (s *SQLiteStore) GetTicketsByColumnAndAssignee(columnPrefix, assignee strin
 
 	query = "SELECT id, title, description, priority, assignee, column, board_id, labels, due_date, subtasks, comments, archived, archived_at, archived_by, created_at, updated_at FROM tickets WHERE archived = 0"
 
-	hasFilter := false
 	if columnPrefix != "" {
-		hasFilter = true
 		query += " AND column LIKE ?"
 		args = append(args, columnPrefix+"%")
 	}
 	if assignee != "" {
-		if hasFilter {
-			query += " AND assignee = ?"
-		} else {
-			query += " WHERE assignee = ?"
-		}
+		query += " AND assignee = ?"
 		args = append(args, assignee)
 	}
 
