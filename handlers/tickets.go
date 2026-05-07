@@ -15,60 +15,6 @@ import (
 	"goban/validation"
 )
 
-func handleReleaseTicketSimple(c *fiber.Ctx) error {
-	id := c.Params("id")
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	for boardID, state := range boardStates {
-		for _, col := range state.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == id {
-					// Guard: do not release archived tickets back into active circulation
-					if t.Archived {
-						return c.Status(403).JSON(fiber.Map{
-							"error": "cannot release an archived ticket",
-						})
-					}
-
-					// Idempotency: already unassigned — nothing to do
-					if t.Assignee == "" {
-						return c.JSON(fiber.Map{"status": "already_unassigned", "ticket": t})
-					}
-
-					releasedAs := t.Assignee
-					t.Assignee = ""
-					oldColumn := t.Column
-					t.Column = "todo-0"
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					// Persist to database
-					if dbStore != nil {
-						if err := dbStore.UpdateTicket(t); err != nil {
-							log.Printf("ERROR: Failed to persist release of ticket %s: %v", id, err)
-							return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to persist release: %v", err)})
-						}
-					}
-
-					log.Printf("Released ticket %s (was assigned to %s)", id, releasedAs)
-
-					sse.Emit("update", id, boardID, fiber.Map{
-						"title":      t.Title,
-						"column":     t.Column,
-						"released":   true,
-						"old_column": oldColumn,
-					})
-
-					return c.JSON(fiber.Map{"status": "released", "ticket": t, "released_as": releasedAs})
-				}
-			}
-		}
-	}
-
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
-}
-
 // normalizePriority returns the canonical lowercase form of a priority value.
 // Assumes validation.ValidatePriority has already been called on the input.
 func normalizePriority(priority string) string {
@@ -491,9 +437,4 @@ func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
 		log.Println("DEBUG: Registered GET /api/v1/tickets/:id (public)")
 	}
 
-	// Release ticket back to TODO pool (requires auth)
-	app.Post("/api/tickets/:id/release", AuthMiddlewareWithRole, handleReleaseTicketSimple)
-	if config.Debug {
-		log.Println("DEBUG: Registered POST /api/tickets/:id/release")
 	}
-}

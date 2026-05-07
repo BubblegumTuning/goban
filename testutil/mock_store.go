@@ -2,6 +2,7 @@
 package testutil
 
 import (
+	"database/sql"
 	"sync"
 	"time"
 
@@ -18,6 +19,10 @@ type MockStore struct {
 	users    map[int64]models.User
 	nextID   int64
 	tokenSeq int64
+
+	// Activity log storage
+	activityLogs []models.ActivityLog
+	logSeq       int64
 
 	// Transaction support
 	txTickets     map[string]*models.Ticket
@@ -215,7 +220,7 @@ func (m *MockStore) GetTicket(id string) (*models.Ticket, error) {
 
 	ticket, exists := m.tickets[id]
 	if !exists {
-		return nil, nil // Not found
+		return nil, sql.ErrNoRows // Match real store behavior
 	}
 	return ticket, nil
 }
@@ -373,7 +378,7 @@ func (m *MockStore) ValidateToken(tokenHash string) (*models.AgentToken, error) 
 			return &tokenCopy, nil
 		}
 	}
-	return nil, nil // Not found
+	return nil, sql.ErrNoRows // Not found - match real store behavior
 }
 
 func (m *MockStore) UpdateTokenLastUsed(tokenHash string) error {
@@ -644,16 +649,30 @@ func (m *MockStore) UpdateUserPassword(id int64, newPassword string) error {
 }
 
 func (m *MockStore) CreateActivityLog(logEntry *models.ActivityLog) (int64, error) {
-	_ = logEntry
-	// No-op in mock store - activity logs not persisted in tests
-	return 0, nil
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.logSeq++
+	entry := *logEntry
+	if entry.ID == 0 {
+		entry.ID = m.logSeq
+	}
+	m.activityLogs = append(m.activityLogs, entry)
+	return entry.ID, nil
 }
 
 func (m *MockStore) GetActivityLogs(ticketID string, limit int) ([]*models.ActivityLog, error) {
-	_ = ticketID
-	_ = limit
-	// No-op in mock store - returns empty slice for tests
-	return []*models.ActivityLog{}, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var result []*models.ActivityLog
+	for i := len(m.activityLogs) - 1; i >= 0 && len(result) < limit; i-- {
+		if m.activityLogs[i].TicketID == ticketID {
+			entry := m.activityLogs[i]
+			result = append(result, &entry)
+		}
+	}
+	return result, nil
 }
 
 func (m *MockStore) GetTicketsByAssignee(assigneeName string) ([]*models.Ticket, error) {

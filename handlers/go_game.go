@@ -247,7 +247,10 @@ func passMove(c *fiber.Ctx) error {
 	}
 
 	var req playMoveRequest
-	_ = c.BodyParser(&req) // Parse player from body or use current turn
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("[GO_GAME] Invalid request body in passMove for game %s: %v", id, err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
 	player := req.Player
 	if player == "" {
 		player = game.CurrentTurn
@@ -310,7 +313,10 @@ func resignGame(c *fiber.Ctx) error {
 	var req struct {
 		Player string `json:"player"`
 	}
-	_ = c.BodyParser(&req)
+	if err := c.BodyParser(&req); err != nil {
+		log.Printf("[GO_GAME] Invalid request body in resignGame for game %s: %v", id, err)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
 	player := game.CurrentTurn
 	if req.Player != "" {
 		player = req.Player

@@ -148,7 +148,7 @@ func Me() fiber.Handler {
 	}
 }
 
-// CheckAuthStatus returns whether a user is authenticated based on JWT in header.
+// CheckAuthStatus returns whether a user is authenticated based on JWT or API token in header.
 func CheckAuthStatus() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
@@ -168,18 +168,29 @@ func CheckAuthStatus() fiber.Handler {
 
 		tokenString := authHeader[7:] // Remove "Bearer " prefix
 
+		// Try JWT first (web UI / human login tokens)
 		claims, err := auth.VerifyJWT(tokenString)
-		if err != nil {
+		if err == nil {
 			return c.JSON(fiber.Map{
-				"authenticated": false,
+				"authenticated": true,
+				"user_id":       claims.UserID,
+				"username":      claims.Username,
+				"role":          claims.Role,
+			})
+		}
+
+		// Fallback: API token path (SHA256-hashed tokens)
+		if user, err := auth.ValidateTokenWithRole(tokenString); err == nil {
+			return c.JSON(fiber.Map{
+				"authenticated": true,
+				"user_id":       user.ID,
+				"username":      user.Name,
+				"role":          user.Role,
 			})
 		}
 
 		return c.JSON(fiber.Map{
-			"authenticated": true,
-			"user_id":       claims.UserID,
-			"username":      claims.Username,
-			"role":          claims.Role,
+			"authenticated": false,
 		})
 	}
 }
