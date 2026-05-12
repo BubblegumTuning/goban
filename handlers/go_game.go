@@ -8,11 +8,13 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
+	"goban/auth"
 	"goban/middleware"
 	"goban/models"
 	"goban/services"
 	"goban/sse"
 	"goban/store"
+	"goban/validation"
 )
 
 var gameStore store.GameStore
@@ -22,10 +24,10 @@ func InitGameStore(gs store.GameStore) {
 	gameStore = gs
 }
 
-// RegisterGoGameRoutes registers all /api/v1/go/ endpoints.
+// RegisterGoGameRoutes registers all /api/v1/go/ endpoints with authentication + rate limiting.
 func RegisterGoGameRoutes(app *fiber.App) {
 	goAPI := app.Group("/api/v1/go")
-	goAPI.Use(middleware.GameLimiter())
+	goAPI.Use(auth.AuthMiddlewareWithUser, middleware.GameLimiter())
 
 	goAPI.Post("/games", createGame)
 	goAPI.Get("/games/:id", getGame)
@@ -112,6 +114,11 @@ func createGame(c *fiber.Ctx) error {
 		req.BoardSize = 19 // Default if no body provided
 	}
 
+	// Validate board size
+	if err := validation.ValidateBoardSize(req.BoardSize); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	game := &models.Game{BoardSize: req.BoardSize}
 	created := gameStore.CreateGame(game)
 
@@ -148,6 +155,11 @@ func playMove(c *fiber.Ctx) error {
 	var req playMoveRequest
 	if err = c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
+	}
+
+	// Validate player color at handler boundary
+	if err := validation.ValidatePlayerColor(req.Player); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	// Validate turn
@@ -256,6 +268,11 @@ func passMove(c *fiber.Ctx) error {
 		player = game.CurrentTurn
 	}
 
+	// Validate resolved player color at handler boundary
+	if err := validation.ValidatePlayerColor(player); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	game.Passes++
 
 	// Record pass in move history
@@ -320,6 +337,11 @@ func resignGame(c *fiber.Ctx) error {
 	player := game.CurrentTurn
 	if req.Player != "" {
 		player = req.Player
+	}
+
+	// Validate resolved player color at handler boundary
+	if err := validation.ValidatePlayerColor(player); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
 	game.Status = "resigned"

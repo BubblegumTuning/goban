@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"database/sql"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,6 +25,11 @@ type MockStore struct {
 	activityLogs []models.ActivityLog
 	logSeq       int64
 
+	// Task link storage for parent/child dependencies
+	taskLinks []mockLink
+	// Run history storage for per-attempt tracking
+	runs      []*models.TicketRun
+
 	// Transaction support
 	txTickets     map[string]*models.Ticket
 	inTransaction bool
@@ -39,6 +45,7 @@ func NewMockStore() *MockStore {
 		tokenSeq:      1,
 		txTickets:     nil,
 		inTransaction: false,
+		taskLinks:     []mockLink{},
 	}
 }
 
@@ -168,6 +175,23 @@ func (m *MockStore) CreateTicket(t *models.Ticket) error {
 	}
 	m.tickets[t.ID] = &ticketCopy
 	return nil
+}
+
+// CreateOrGetTicket creates a ticket or returns existing one with matching idempotency key.
+func (m *MockStore) CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error) {
+	if t.IdempotencyKey != "" {
+		for _, existing := range m.tickets {
+			if existing.IdempotencyKey == t.IdempotencyKey && !existing.Archived {
+				return existing, nil
+			}
+		}
+	}
+
+	// No match — create new ticket
+	if err := m.CreateTicket(t); err != nil {
+		return nil, fmt.Errorf("CreateOrGetTicket: %w", err)
+	}
+	return t, nil
 }
 
 // GetAllTickets returns all tickets in the mock store.
@@ -687,3 +711,147 @@ func (m *MockStore) GetTicketsByAssignee(assigneeName string) ([]*models.Ticket,
 	}
 	return result, nil
 }
+
+// taskLinks stores parent-child dependencies for testing.
+type mockLink struct {
+	parentID string
+	childID  string
+}
+
+func (m *MockStore) AddTaskLink(parentID, childID string) error {
+	if parentID == childID {
+		return fmt.Errorf("self-link: ticket cannot be its own parent")
+	}
+	// Simple cycle check - look for direct reverse link
+	for _, link := range m.taskLinks {
+		if link.parentID == childID && link.childID == parentID {
+			return fmt.Errorf("cycle detected: adding link %s -> %s would create a dependency cycle", parentID, childID)
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Check for duplicate
+	for _, link := range m.taskLinks {
+		if link.parentID == parentID && link.childID == childID {
+			return nil // Already exists
+		}
+	}
+	m.taskLinks = append(m.taskLinks, mockLink{parentID: parentID, childID: childID})
+	return nil
+}
+
+func (m *MockStore) RemoveTaskLink(parentID, childID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, link := range m.taskLinks {
+		if link.parentID == parentID && link.childID == childID {
+			m.taskLinks = append(m.taskLinks[:i], m.taskLinks[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("task link not found")
+}
+
+func (m *MockStore) GetTaskLinks(ticketID string) ([]string, []string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var parents []string
+	var children []string
+	for _, link := range m.taskLinks {
+		if link.childID == ticketID {
+			parents = append(parents, link.parentID)
+		}
+		if link.parentID == ticketID {
+			children = append(children, link.childID)
+		}
+	}
+	return parents, children, nil
+}
+
+// ============================================================
+// TicketRun operations - Per-attempt tracking (ticket-2b0f57e014)
+// ============================================================
+
+func (m *MockStore) CreateRun(r *models.TicketRun) (*models.TicketRun, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if r.ID == 0 {
+		runID := int64(1)
+		for _, existing := range m.runs {
+			if existing.ID >= runID {
+				runID = existing.ID + 1
+			}
+		}
+		r.ID = runID
+	}
+
+	if r.StartedAt.IsZero() {
+		r.StartedAt = time.Now()
+	}
+	if r.Outcome == "" {
+		r.Outcome = "active"
+	}
+
+	m.runs = append(m.runs, r)
+	return r, nil
+}
+
+func (m *MockStore) GetRuns(ticketID string) ([]*models.TicketRun, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	var runs []*models.TicketRun
+	for _, run := range m.runs {
+		if run.TicketID == ticketID {
+			runs = append(runs, run)
+		}
+	}
+
+	// Sort by started_at descending (newest first)
+	for i := 0; i < len(runs); i++ {
+		for j := i + 1; j < len(runs); j++ {
+			if runs[j].StartedAt.After(runs[i].StartedAt) {
+				runs[i], runs[j] = runs[j], runs[i]
+			}
+		}
+	}
+
+	return runs, nil
+}
+
+func (m *MockStore) UpdateRun(runID int64, outcome string, summary string, metadata string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	for _, run := range m.runs {
+		if run.ID == runID {
+			run.Outcome = outcome
+			run.EndedAt = &now
+			if summary != "" {
+				run.Summary = summary
+			}
+			if metadata != "" {
+				run.Metadata = metadata
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("run not found: %d", runID)
+}
+
+func (m *MockStore) GetActiveRun(ticketID string) (*models.TicketRun, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	for _, run := range m.runs {
+		if run.TicketID == ticketID && run.Outcome == "active" {
+			return run, nil
+		}
+	}
+
+	return nil, sql.ErrNoRows
+}
+

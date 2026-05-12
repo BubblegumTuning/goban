@@ -504,3 +504,165 @@ func joinQueryParams(parts []string) string {
 	return result
 }
 
+// LinkTickets creates a parent-child dependency between two tickets.
+func (c *Client) LinkTickets(ctx context.Context, parentID, childID string) error {
+	url := c.baseURL + "/api/tickets/" + childID + "/links"
+
+	linkReq := struct {
+		ParentID string `json:"parent_id"`
+	}{ParentID: parentID}
+
+	httpReq, err := c.newRequest(ctx, "POST", url, linkReq)
+	if err != nil {
+		return fmt.Errorf("link tickets request: %w", err)
+	}
+
+	_, err = c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return fmt.Errorf("link tickets: %w", err)
+	}
+	return nil
+}
+
+// UnlinkTickets removes a parent-child dependency between two tickets.
+func (c *Client) UnlinkTickets(ctx context.Context, parentID, childID string) error {
+	url := c.baseURL + "/api/tickets/" + childID + "/links?parent=" + parentID
+
+	httpReq, err := c.newRequest(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("unlink tickets request: %w", err)
+	}
+
+	_, err = c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return fmt.Errorf("unlink tickets: %w", err)
+	}
+	return nil
+}
+
+// GetTaskLinks retrieves all parent/child links for a ticket.
+func (c *Client) GetTaskLinks(ctx context.Context, ticketID string) (*LinksResponse, error) {
+	url := c.baseURL + "/api/tickets/" + ticketID + "/links"
+
+	httpReq, err := c.newRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get task links request: %w", err)
+	}
+
+	body, err := c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get task links: %w", err)
+	}
+
+	var links LinksResponse
+	if err := json.Unmarshal(body, &links); err != nil {
+		return nil, fmt.Errorf("parse task links response: %w", err)
+	}
+	return &links, nil
+}
+
+// LinksResponse represents the response from GET /api/tickets/:id/links.
+type LinksResponse struct {
+	Parents  []string `json:"parents"`
+	Children []string `json:"children"`
+}
+
+// RunRequest represents a request to create or update a run.
+type RunRequest struct {
+	Summary  string `json:"summary,omitempty"`
+	Metadata string `json:"metadata,omitempty"`
+}
+
+// TicketRunResponse represents a run record from the API.
+type TicketRunResponse struct {
+	ID        int64     `json:"id"`
+	TicketID  string    `json:"ticket_id"`
+	Outcome   string    `json:"outcome"`
+	StartedAt string    `json:"started_at"`
+	EndedAt   *string   `json:"ended_at,omitempty"`
+	Summary   string    `json:"summary,omitempty"`
+	Metadata  string    `json:"metadata,omitempty"`
+	Actor     string    `json:"actor"`
+}
+
+// CreateRun creates a new run for the given ticket.
+func (c *Client) CreateRun(ctx context.Context, ticketID string, req RunRequest) (*TicketRunResponse, error) {
+	url := c.baseURL + "/api/tickets/" + ticketID + "/runs"
+
+	httpReq, err := c.newRequest(ctx, "POST", url, req)
+	if err != nil {
+		return nil, fmt.Errorf("create run request: %w", err)
+	}
+
+	body, err := c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("create run: %w", err)
+	}
+
+	var run TicketRunResponse
+	if err := json.Unmarshal(body, &run); err != nil {
+		return nil, fmt.Errorf("parse create run response: %w", err)
+	}
+	return &run, nil
+}
+
+// GetRuns retrieves all runs for a ticket.
+func (c *Client) GetRuns(ctx context.Context, ticketID string) ([]TicketRunResponse, error) {
+	url := c.baseURL + "/api/tickets/" + ticketID + "/runs"
+
+	httpReq, err := c.newRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get runs request: %w", err)
+	}
+
+	body, err := c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get runs: %w", err)
+	}
+
+	var runs []TicketRunResponse
+	if err := json.Unmarshal(body, &runs); err != nil {
+		return nil, fmt.Errorf("parse get runs response: %w", err)
+	}
+	if runs == nil {
+		runs = []TicketRunResponse{}
+	}
+	return runs, nil
+}
+
+// GetActiveRun retrieves the active run for a ticket.
+func (c *Client) GetActiveRun(ctx context.Context, ticketID string) (*TicketRunResponse, error) {
+	url := c.baseURL + "/api/tickets/" + ticketID + "/runs/active"
+
+	httpReq, err := c.newRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get active run request: %w", err)
+	}
+
+	body, err := c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("get active run: %w", err)
+	}
+
+	var run TicketRunResponse
+	if err := json.Unmarshal(body, &run); err != nil {
+		return nil, fmt.Errorf("parse get active run response: %w", err)
+	}
+	return &run, nil
+}
+
+// UpdateRun updates the outcome of a run.
+func (c *Client) UpdateRun(ctx context.Context, ticketID string, runID int64, req RunRequest) error {
+	url := c.baseURL + "/api/tickets/" + ticketID + "/runs?run_id=" + fmt.Sprintf("%d", runID)
+
+	httpReq, err := c.newRequest(ctx, "PUT", url, req)
+	if err != nil {
+		return fmt.Errorf("update run request: %w", err)
+	}
+
+	_, err = c.executeWithRetry(ctx, httpReq)
+	if err != nil {
+		return fmt.Errorf("update run: %w", err)
+	}
+	return nil
+}

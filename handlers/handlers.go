@@ -96,6 +96,8 @@ func RegisterRoutes(app *fiber.App, db PaginatedStore, boards []config.Board) {
 	RegisterTicketRoutes(app, dbStore)
 	RegisterCommentRoutes(app)
 	RegisterSubtaskRoutes(app)
+	RegisterLinkRoutes(app)
+	RegisterRunRoutes(app)
 
 	// Initialize Go game store and register routes
 	InitGameStore(store.NewMemoryGameStore())

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 
@@ -38,9 +39,27 @@ func (s *SQLiteStore) Init() error {
 		log.Printf("Warning: Failed to enable WAL mode: %v", err)
 	}
 
+	// Create task_links table for parent/child dependencies (ticket-144555d9c3)
+	_, _ = db.Exec(`
+		CREATE TABLE IF NOT EXISTS task_links (
+			parent_id TEXT NOT NULL,
+			child_id TEXT NOT NULL,
+			PRIMARY KEY (parent_id, child_id),
+			FOREIGN KEY (parent_id) REFERENCES tickets(id) ON DELETE CASCADE,
+			FOREIGN KEY (child_id) REFERENCES tickets(id) ON DELETE CASCADE,
+			CHECK (parent_id != child_id)
+		)
+	`)
+
 	if err := s.createTables(); err != nil {
 		return fmt.Errorf("failed to create tables: %w", err)
 	}
+
+	// Migration: add idempotency_key column and unique index if not present (safe no-op on existing columns/indexes)
+	if _, err := db.Exec("ALTER TABLE tickets ADD COLUMN idempotency_key TEXT DEFAULT NULL"); err != nil {
+		log.Printf("Warning: idempotency_key migration skipped (%v) — likely already applied", err)
+	}
+	_, _ = db.Exec("CREATE INDEX IF NOT EXISTS idx_tickets_idempotency_key ON tickets(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key != ''")
 
 	log.Printf("Database initialized: %s", s.config.DBPath)
 	return nil
@@ -52,6 +71,208 @@ func (s *SQLiteStore) Close() error {
 		return s.db.Close()
 	}
 	return nil
+}
+
+// ============================================================
+// TaskLink operations - Parent/Child dependencies (ticket-144555d9c3)
+// ============================================================
+
+// AddTaskLink creates a parent-child dependency between two tickets.
+func (s *SQLiteStore) AddTaskLink(parentID, childID string) error {
+	if parentID == childID {
+		return fmt.Errorf("self-link: ticket cannot be its own parent")
+	}
+
+	err := s.detectCycle(parentID, childID)
+	if err != nil {
+		return err
+	}
+
+	tx, txErr := s.db.Begin()
+	if txErr != nil {
+		return fmt.Errorf("AddTaskLink begin: %w", txErr)
+	}
+
+	_, err = tx.Exec(`INSERT OR IGNORE INTO task_links (parent_id, child_id) VALUES (?, ?)`, parentID, childID)
+	if err == nil {
+		err = tx.Commit()
+	} else {
+		tx.Rollback()
+	}
+
+	return fmt.Errorf("AddTaskLink exec: %w", err)
+}
+
+// RemoveTaskLink deletes a parent-child dependency.
+func (s *SQLiteStore) RemoveTaskLink(parentID, childID string) error {
+	result, err := s.db.Exec(`DELETE FROM task_links WHERE parent_id = ? AND child_id = ?`, parentID, childID)
+	if err != nil {
+		return fmt.Errorf("RemoveTaskLink exec: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("task link not found")
+	}
+	return nil
+}
+
+// GetTaskLinks returns all parents and children for a given ticket.
+func (s *SQLiteStore) GetTaskLinks(ticketID string) ([]string, []string, error) {
+	var parents []string
+	var children []string
+
+	pRows, err := s.db.Query(`SELECT parent_id FROM task_links WHERE child_id = ?`, ticketID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetTaskLinks parents query: %w", err)
+	}
+	defer pRows.Close()
+	for pRows.Next() {
+		var pid string
+		if err := pRows.Scan(&pid); err == nil {
+			parents = append(parents, pid)
+		}
+	}
+
+	cRows, err := s.db.Query(`SELECT child_id FROM task_links WHERE parent_id = ?`, ticketID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetTaskLinks children query: %w", err)
+	}
+	defer cRows.Close()
+	for cRows.Next() {
+		var cid string
+		if err := cRows.Scan(&cid); err == nil {
+			children = append(children, cid)
+		}
+	}
+
+	return parents, children, nil
+}
+
+// detectCycle uses BFS from child following parent edges to check if parent is reachable.
+func (s *SQLiteStore) detectCycle(parentID, childID string) error {
+	visited := make(map[string]bool)
+	queue := []string{childID}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		if current == parentID {
+			return fmt.Errorf("cycle detected: adding link %s -> %s would create a dependency cycle", parentID, childID)
+		}
+
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+
+		rows, err := s.db.Query(`SELECT parent_id FROM task_links WHERE child_id = ?`, current)
+		if err != nil {
+			return fmt.Errorf("detectCycle query: %w", err)
+		}
+
+		for rows.Next() {
+			var pid string
+			if err := rows.Scan(&pid); err == nil {
+				queue = append(queue, pid)
+			}
+		}
+		rows.Close()
+	}
+
+	return nil // No cycle found
+}
+
+// ============================================================
+// TicketRun operations - Per-attempt tracking (ticket-2b0f57e014)
+// ============================================================
+
+// CreateRun inserts a new run record for the given ticket.
+func (s *SQLiteStore) CreateRun(r *models.TicketRun) (*models.TicketRun, error) {
+	now := time.Now()
+	var startedAt string = now.Format(time.RFC3339)
+	if !r.StartedAt.IsZero() {
+		startedAt = r.StartedAt.Format(time.RFC3339)
+	}
+
+	result, err := s.db.Exec(`
+		INSERT INTO ticket_runs (ticket_id, outcome, started_at, summary, metadata, actor)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, r.TicketID, r.Outcome, startedAt, r.Summary, r.Metadata, r.Actor)
+	if err != nil {
+		return nil, fmt.Errorf("CreateRun insert: %w", err)
+	}
+
+	runID, _ := result.LastInsertId()
+	r.ID = runID
+	r.StartedAt = now
+
+	return r, nil
+}
+
+// GetRuns returns all runs for a ticket, newest first.
+func (s *SQLiteStore) GetRuns(ticketID string) ([]*models.TicketRun, error) {
+	rows, err := s.db.Query(`
+		SELECT id, ticket_id, outcome, started_at, ended_at, summary, metadata, actor
+		FROM ticket_runs WHERE ticket_id = ? ORDER BY started_at DESC
+	`, ticketID)
+	if err != nil {
+		return nil, fmt.Errorf("GetRuns query: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []*models.TicketRun
+	for rows.Next() {
+		run := &models.TicketRun{}
+		var endedAt sql.NullString
+		err := rows.Scan(&run.ID, &run.TicketID, &run.Outcome, &run.StartedAt, &endedAt, &run.Summary, &run.Metadata, &run.Actor)
+		if err != nil {
+			continue
+		}
+		if endedAt.Valid && endedAt.String != "" {
+			parsed, parseErr := time.Parse(time.RFC3339, endedAt.String)
+			if parseErr == nil {
+				run.EndedAt = &parsed
+			}
+		}
+		runs = append(runs, run)
+	}
+
+	return runs, rows.Err()
+}
+
+// UpdateRun updates outcome/ended_at/summary/metadata for a run.
+func (s *SQLiteStore) UpdateRun(runID int64, outcome string, summary string, metadata string) error {
+	now := time.Now().Format(time.RFC3339)
+	_, err := s.db.Exec(`
+		UPDATE ticket_runs SET outcome = ?, ended_at = ?, summary = COALESCE(?, summary), metadata = COALESCE(?, metadata) WHERE id = ?
+	`, outcome, now, summary, metadata, runID)
+	return fmt.Errorf("UpdateRun exec: %w", err)
+}
+
+// GetActiveRun returns the current active (non-terminal) run for a ticket.
+func (s *SQLiteStore) GetActiveRun(ticketID string) (*models.TicketRun, error) {
+	row := s.db.QueryRow(`
+		SELECT id, ticket_id, outcome, started_at, ended_at, summary, metadata, actor
+		FROM ticket_runs WHERE ticket_id = ? AND outcome = 'active' ORDER BY started_at DESC LIMIT 1
+	`, ticketID)
+
+	run := &models.TicketRun{}
+	var endedAt sql.NullString
+	err := row.Scan(&run.ID, &run.TicketID, &run.Outcome, &run.StartedAt, &endedAt, &run.Summary, &run.Metadata, &run.Actor)
+	if err != nil {
+		return nil, err
+	}
+
+	if endedAt.Valid && endedAt.String != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, endedAt.String)
+		if parseErr == nil {
+			run.EndedAt = &parsed
+		}
+	}
+
+	return run, nil
 }
 
 // BeginTx starts a new transaction and returns a Tx interface for scoped operations.
@@ -221,6 +442,7 @@ func (s *SQLiteStore) createTables() error {
 		assignee TEXT DEFAULT '',
 		column TEXT NOT NULL,
 		board_id TEXT NOT NULL,
+		idempotency_key TEXT,
 		labels TEXT DEFAULT '[]', -- JSON array of strings
 		due_date TEXT DEFAULT '',
 		subtasks TEXT DEFAULT '[]', -- JSON array of Subtask objects
@@ -395,15 +617,92 @@ func (s *SQLiteStore) CreateTicket(t *models.Ticket) error {
 
 	_, err = tx.Exec(`
 	INSERT INTO tickets (id, title, description, priority, assignee, column, board_id,
-	 labels, due_date, subtasks, comments, archived, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	 labels, due_date, subtasks, comments, archived, idempotency_key, created_at, updated_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `, t.ID, t.Title, t.Description, t.Priority, t.Assignee, t.Column, t.BoardID,
-		labelsJSON, dueDate, subtasksJSON, commentsJSON, 0, t.CreatedAt, t.UpdatedAt)
+		labelsJSON, dueDate, subtasksJSON, commentsJSON, 0, t.IdempotencyKey, t.CreatedAt, t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("CreateTicket exec: %w", err)
 	}
 
 	return tx.Commit()
+}
+
+// CreateOrGetTicket creates a new ticket or returns the existing one if an idempotency key matches.
+// If t.IdempotencyKey is non-empty, checks for an existing non-archived ticket with that key first.
+func (s *SQLiteStore) CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error) {
+	if t.IdempotencyKey != "" {
+		row := s.db.QueryRow(`
+			SELECT id, title, description, priority, assignee, column, board_id,
+			 labels, due_date, subtasks, comments, archived, archived_at, archived_by,
+			 created_at, updated_at
+			FROM tickets WHERE idempotency_key = ? AND archived = 0
+		`, t.IdempotencyKey)
+
+		var (
+			labelsJSON     []byte
+			dueDateStr     sql.NullString
+			subtasksJSON   []byte
+			commentsJSON   []byte
+			archivedInt    int
+			archivedAtStr  sql.NullString
+			archivedByVal  sql.NullInt64
+		)
+
+		result := &models.Ticket{}
+		err := row.Scan(
+			&result.ID, &result.Title, &result.Description, &result.Priority,
+			&result.Assignee, &result.Column, &result.BoardID,
+			&labelsJSON, &dueDateStr, &subtasksJSON, &commentsJSON,
+			&archivedInt, &archivedAtStr, &archivedByVal,
+			&result.CreatedAt, &result.UpdatedAt,
+		)
+		if err == nil {
+			// Parse JSON fields from the existing ticket
+			if len(labelsJSON) > 0 {
+				if unmarshalErr := json.Unmarshal(labelsJSON, &result.Labels); unmarshalErr != nil {
+					log.Printf("Warning: Failed to unmarshal labels for ticket %s: %v", result.ID, unmarshalErr)
+				}
+			}
+			if dueDateStr.Valid && dueDateStr.String != "" {
+				dueDate := dueDateStr.String
+				result.DueDate = &dueDate
+			}
+			if len(subtasksJSON) > 0 {
+				if unmarshalErr := json.Unmarshal(subtasksJSON, &result.Subtasks); unmarshalErr != nil {
+					log.Printf("Warning: Failed to unmarshal subtasks for ticket %s: %v", result.ID, unmarshalErr)
+				}
+			}
+			if len(commentsJSON) > 0 {
+				if unmarshalErr := json.Unmarshal(commentsJSON, &result.Comments); unmarshalErr != nil {
+					log.Printf("Warning: Failed to unmarshal comments for ticket %s: %v", result.ID, unmarshalErr)
+				}
+			}
+			if archivedInt == 1 {
+				result.Archived = true
+			}
+			if archivedAtStr.Valid && archivedAtStr.String != "" {
+				archivedAt := archivedAtStr.String
+				result.ArchivedAt = &archivedAt
+			}
+			if archivedByVal.Valid {
+				aid := int(archivedByVal.Int64)
+				result.ArchivedBy = &aid
+			}
+
+			// Set idempotency key on returned ticket for consistency
+			result.IdempotencyKey = t.IdempotencyKey
+			return result, nil
+		} else if err != sql.ErrNoRows {
+			return nil, fmt.Errorf("CreateOrGetTicket lookup: %w", err)
+		}
+	}
+
+	// No existing match (or no key provided) — create the ticket normally
+	if err := s.CreateTicket(t); err != nil {
+		return nil, fmt.Errorf("CreateOrGetTicket: %w", err)
+	}
+	return t, nil
 }
 
 // UpdateTicket updates an existing ticket within a transaction.

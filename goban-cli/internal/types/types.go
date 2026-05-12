@@ -84,10 +84,12 @@ type Comment struct {
 
 // CreateTicketRequest represents the request body for creating a ticket
 type CreateTicketRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Column      string `json:"column,omitempty"` // API uses "column" field
-	BoardID     string `json:"board_id,omitempty"`
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	Column         string   `json:"column,omitempty"` // API uses "column" field
+	BoardID        string   `json:"board_id,omitempty"`
+	IdempotencyKey string   `json:"idempotency_key,omitempty"`
+	Parents        []string `json:"parents,omitempty"`
 }
 
 // UpdateTicketRequest represents the request body for updating a ticket

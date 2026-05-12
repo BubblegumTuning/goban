@@ -53,6 +53,7 @@ func (s *PostgresStore) Init() error {
 			"column" VARCHAR(32),
 			assignee VARCHAR(128),
 			priority VARCHAR(16),
+			idempotency_key VARCHAR(64),
 			labels JSONB DEFAULT '[]'::jsonb,
 			due_date TIMESTAMP WITHOUT TIME ZONE,
 			subtasks JSONB DEFAULT '[]'::jsonb,
@@ -78,6 +79,10 @@ func (s *PostgresStore) Init() error {
 	if err != nil {
 		log.Printf("Warning: failed to update priority constraint: %v", err)
 	}
+
+	// Migrate: add idempotency_key column and unique index if not present (safe no-op on existing columns/indexes)
+	_, _ = s.db.Exec("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(64)")
+	_, _ = s.db.Exec("CREATE INDEX IF NOT EXISTS idx_tickets_idempotency_key ON tickets(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key != ''")
 
 	// Create indexes for better query performance
 	_, err = s.db.Exec(`
@@ -145,6 +150,21 @@ CREATE TABLE IF NOT EXISTS agent_tokens (
 	if err != nil {
 		log.Printf("Warning: could not create activity_logs indexes: %v", err)
 	}
+	// Create task_links table for parent/child dependencies (ticket-144555d9c3)
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS task_links (
+			parent_id VARCHAR(64) NOT NULL,
+			child_id VARCHAR(64) NOT NULL,
+			PRIMARY KEY (parent_id, child_id),
+			FOREIGN KEY (parent_id) REFERENCES tickets(id) ON DELETE CASCADE,
+			FOREIGN KEY (child_id) REFERENCES tickets(id) ON DELETE CASCADE,
+			CHECK (parent_id != child_id)
+		)
+	`)
+	if err != nil {
+		log.Printf("Warning: could not create task_links table: %v", err)
+	}
+
 
 	log.Printf("PostgreSQL database initialized at %s:%d/%s", s.config.DBHost, s.config.DBPort, s.config.DBName)
 	return nil
@@ -156,6 +176,194 @@ func (s *PostgresStore) Close() error {
 		return s.db.Close()
 	}
 	return nil
+}
+
+// ============================================================
+// TaskLink operations - Parent/Child dependencies (ticket-144555d9c3)
+// ============================================================
+
+// AddTaskLink creates a parent-child dependency between two tickets.
+func (s *PostgresStore) AddTaskLink(parentID, childID string) error {
+	if parentID == childID {
+		return fmt.Errorf("self-link: ticket cannot be its own parent")
+	}
+
+	err := s.detectCyclePg(parentID, childID)
+	if err != nil {
+		return err
+	}
+
+	tx, txErr := s.db.Begin()
+	if txErr != nil {
+		return fmt.Errorf("AddTaskLink begin: %w", txErr)
+	}
+
+	_, err = tx.Exec(`INSERT INTO task_links (parent_id, child_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, parentID, childID)
+	if err == nil {
+		err = tx.Commit()
+	} else {
+		tx.Rollback()
+	}
+
+	return fmt.Errorf("AddTaskLink exec: %w", err)
+}
+
+// RemoveTaskLink deletes a parent-child dependency.
+func (s *PostgresStore) RemoveTaskLink(parentID, childID string) error {
+	result, err := s.db.Exec(`DELETE FROM task_links WHERE parent_id = $1 AND child_id = $2`, parentID, childID)
+	if err != nil {
+		return fmt.Errorf("RemoveTaskLink exec: %w", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("task link not found")
+	}
+	return nil
+}
+
+// GetTaskLinks returns all parents and children for a given ticket.
+func (s *PostgresStore) GetTaskLinks(ticketID string) ([]string, []string, error) {
+	var parents []string
+	var children []string
+
+	pRows, err := s.db.Query(`SELECT parent_id FROM task_links WHERE child_id = $1`, ticketID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetTaskLinks parents query: %w", err)
+	}
+	defer pRows.Close()
+	for pRows.Next() {
+		var pid string
+		if err := pRows.Scan(&pid); err == nil {
+			parents = append(parents, pid)
+		}
+	}
+
+	cRows, err := s.db.Query(`SELECT child_id FROM task_links WHERE parent_id = $1`, ticketID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GetTaskLinks children query: %w", err)
+	}
+	defer cRows.Close()
+	for cRows.Next() {
+		var cid string
+		if err := cRows.Scan(&cid); err == nil {
+			children = append(children, cid)
+		}
+	}
+
+	return parents, children, nil
+}
+
+// detectCyclePg uses BFS from child following parent edges to check if parent is reachable.
+func (s *PostgresStore) detectCyclePg(parentID, childID string) error {
+	visited := make(map[string]bool)
+	queue := []string{childID}
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		if current == parentID {
+			return fmt.Errorf("cycle detected: adding link %s -> %s would create a dependency cycle", parentID, childID)
+		}
+
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+
+		rows, err := s.db.Query(`SELECT parent_id FROM task_links WHERE child_id = $1`, current)
+		if err != nil {
+			return fmt.Errorf("detectCycle query: %w", err)
+		}
+
+		for rows.Next() {
+			var pid string
+			if err := rows.Scan(&pid); err == nil {
+				queue = append(queue, pid)
+			}
+		}
+		rows.Close()
+	}
+
+	return nil // No cycle found
+}
+
+// ============================================================
+// TicketRun operations - Per-attempt tracking (ticket-2b0f57e014)
+// ============================================================
+
+// CreateRun inserts a new run record for the given ticket.
+func (s *PostgresStore) CreateRun(r *models.TicketRun) (*models.TicketRun, error) {
+	runID := int64(0)
+	err := s.db.QueryRow(`
+		INSERT INTO ticket_runs (ticket_id, outcome, started_at, summary, metadata, actor)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+	`, r.TicketID, r.Outcome, time.Now(), r.Summary, r.Metadata, r.Actor).Scan(&runID)
+	if err != nil {
+		return nil, fmt.Errorf("CreateRun insert: %w", err)
+	}
+
+	r.ID = runID
+	r.StartedAt = time.Now()
+	return r, nil
+}
+
+// GetRuns returns all runs for a ticket, newest first.
+func (s *PostgresStore) GetRuns(ticketID string) ([]*models.TicketRun, error) {
+	rows, err := s.db.Query(`
+		SELECT id, ticket_id, outcome, started_at, ended_at, summary, metadata, actor
+		FROM ticket_runs WHERE ticket_id = $1 ORDER BY started_at DESC
+	`, ticketID)
+	if err != nil {
+		return nil, fmt.Errorf("GetRuns query: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []*models.TicketRun
+	for rows.Next() {
+		run := &models.TicketRun{}
+		var endedAt sql.NullTime
+		err := rows.Scan(&run.ID, &run.TicketID, &run.Outcome, &run.StartedAt, &endedAt, &run.Summary, &run.Metadata, &run.Actor)
+		if err != nil {
+			continue
+		}
+		if endedAt.Valid {
+			run.EndedAt = &endedAt.Time
+		}
+		runs = append(runs, run)
+	}
+
+	return runs, rows.Err()
+}
+
+// UpdateRun updates outcome/ended_at/summary/metadata for a run.
+func (s *PostgresStore) UpdateRun(runID int64, outcome string, summary string, metadata string) error {
+	_, err := s.db.Exec(`
+		UPDATE ticket_runs SET outcome = $1, ended_at = NOW(), summary = COALESCE($2, summary), metadata = COALESCE($3, metadata) WHERE id = $4
+	`, outcome, summary, metadata, runID)
+	return fmt.Errorf("UpdateRun exec: %w", err)
+}
+
+// GetActiveRun returns the current active (non-terminal) run for a ticket.
+func (s *PostgresStore) GetActiveRun(ticketID string) (*models.TicketRun, error) {
+	row := s.db.QueryRow(`
+		SELECT id, ticket_id, outcome, started_at, ended_at, summary, metadata, actor
+		FROM ticket_runs WHERE ticket_id = $1 AND outcome = 'active' ORDER BY started_at DESC LIMIT 1
+	`, ticketID)
+
+	run := &models.TicketRun{}
+	var endedAt sql.NullTime
+	err := row.Scan(&run.ID, &run.TicketID, &run.Outcome, &run.StartedAt, &endedAt, &run.Summary, &run.Metadata, &run.Actor)
+	if err != nil {
+		return nil, err
+	}
+
+	if endedAt.Valid {
+		run.EndedAt = &endedAt.Time
+	}
+
+	return run, nil
 }
 
 // BeginTx starts a new transaction and returns a Tx interface for scoped operations.
@@ -382,6 +590,60 @@ func (s *PostgresStore) CreateTicket(t *models.Ticket) error {
 	}
 
 	return nil
+}
+
+// CreateOrGetTicket creates a new ticket or returns the existing one if an idempotency key matches.
+func (s *PostgresStore) CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error) {
+	if t.IdempotencyKey != "" {
+		row := s.db.QueryRow(`
+			SELECT id, title, description, priority, assignee, "column", board_id,
+			 labels, due_date, subtasks, comments, archived, archived_at, archived_by,
+			 created_at, updated_at
+			FROM tickets WHERE idempotency_key = $1 AND NOT archived
+		`, t.IdempotencyKey)
+
+		var result models.Ticket
+		var labelsJSON, subtasksJSON, commentsJSON []byte
+		var archived bool
+		var dueDate sql.NullTime
+		var archivedAt sql.NullTime
+		var archivedBy sql.NullInt64
+
+		err := row.Scan(&result.ID, &result.Title, &result.Description, &result.Priority,
+			&result.Assignee, &result.Column, &result.BoardID,
+			&labelsJSON, &dueDate,
+			&subtasksJSON, &commentsJSON, &archived, &archivedAt, &archivedBy,
+			&result.CreatedAt, &result.UpdatedAt)
+		if err == nil {
+			result.Archived = archived
+			if dueDate.Valid {
+				dueDateString := dueDate.Time.Format(time.RFC3339)
+				result.DueDate = &dueDateString
+			}
+			if archivedAt.Valid {
+				archivedTimeString := archivedAt.Time.Format(time.RFC3339)
+				result.ArchivedAt = &archivedTimeString
+			}
+			if archivedBy.Valid {
+				aid := int(archivedBy.Int64)
+				result.ArchivedBy = &aid
+			}
+
+			_ = json.Unmarshal(labelsJSON, &result.Labels)
+			_ = json.Unmarshal(subtasksJSON, &result.Subtasks)
+			_ = json.Unmarshal(commentsJSON, &result.Comments)
+
+			result.IdempotencyKey = t.IdempotencyKey
+			return &result, nil
+		} else if err != sql.ErrNoRows {
+			return nil, fmt.Errorf("CreateOrGetTicket lookup: %w", err)
+		}
+	}
+
+	if err := s.CreateTicket(t); err != nil {
+		return nil, fmt.Errorf("CreateOrGetTicket: %w", err)
+	}
+	return t, nil
 }
 
 // GetTicket retrieves a single ticket by ID.
@@ -758,14 +1020,15 @@ func (s *PostgresStore) UnarchiveTicket(ticketID string) error {
 func (s *PostgresStore) CreateToken(agentName, tokenHash string) (int64, error) {
 	tokenName := fmt.Sprintf("goban-%s", tokenHash[:8])
 
-	result, err := s.db.Exec(`
+	var id int64
+	err := s.db.QueryRow(`
 		INSERT INTO agent_tokens (agent_name, token_name, token_hash) VALUES ($1, $2, $3)
-	`, agentName, tokenName, tokenHash)
+		RETURNING id
+	`, agentName, tokenName, tokenHash).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
 
-	id, _ := result.LastInsertId()
 	return id, nil
 }
 
@@ -773,14 +1036,15 @@ func (s *PostgresStore) CreateToken(agentName, tokenHash string) (int64, error) 
 func (s *PostgresStore) CreateTokenWithUser(userID int64, agentName, tokenHash string) (int64, error) {
 	tokenName := fmt.Sprintf("goban-%s", tokenHash[:8])
 
-	result, err := s.db.Exec(`
+	var id int64
+	err := s.db.QueryRow(`
 		INSERT INTO agent_tokens (agent_name, token_name, token_hash, user_id) VALUES ($1, $2, $3, $4)
-	`, agentName, tokenName, tokenHash, userID)
+		RETURNING id
+	`, agentName, tokenName, tokenHash, userID).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("CreateTokenWithUser exec: %w", err)
 	}
 
-	id, _ := result.LastInsertId()
 	return id, nil
 }
 

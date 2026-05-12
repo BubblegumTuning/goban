@@ -8,16 +8,32 @@ import (
 )
 
 const (
-	MaxTitleLen        = 256
-	MaxDescriptionLen  = 4096
-	MaxUsernameLen     = 32
-	MinUsernameLen     = 1
-	MaxAssigneeLen     = 32
-	MaxLabelLen        = 64
-	MaxLabelsCount     = 10
-	MaxCommentBodyLen  = 4096
-	MaxSubtaskTitleLen = 256
+	MaxTitleLen          = 256
+	MaxDescriptionLen    = 4096
+	MaxUsernameLen       = 32
+	MinUsernameLen       = 1
+	MaxAssigneeLen       = 32
+	MaxLabelLen          = 64
+	MaxLabelsCount       = 10
+	MaxCommentBodyLen    = 4096
+	MaxSubtaskTitleLen   = 256
+	MaxRunSummaryLen     = 512
+	MaxRunMetadataLen    = 1024
 )
+
+// ValidBoardSizes is the set of acceptable Go board sizes.
+var ValidBoardSizes = map[int]bool{9: true, 13: true, 19: true}
+
+// ValidPlayerColors is the set of acceptable player color values.
+var ValidPlayerColors = map[string]bool{"black": true, "white": true}
+
+// ValidRunOutcomes is the set of acceptable run outcome values.
+var ValidRunOutcomes = map[string]bool{
+	"active":    true,
+	"completed": true,
+	"failed":    true,
+	"cancelled": true,
+}
 
 // ValidPriorities is the set of acceptable priority values.
 var ValidPriorities = map[string]bool{
@@ -123,6 +139,65 @@ func ValidateSubtaskTitle(title string) error {
 	}
 	if len(title) > MaxSubtaskTitleLen {
 		return fmt.Errorf("subtask title must be at most %d characters", MaxSubtaskTitleLen)
+	}
+	return nil
+}
+
+// ValidateBoardSize checks that a Go board size is one of the accepted values.
+func ValidateBoardSize(size int) error {
+	if !ValidBoardSizes[size] {
+		return fmt.Errorf("board_size must be one of: 9, 13, or 19")
+	}
+	return nil
+}
+
+// ValidatePlayerColor checks that a player color is "black" or "white".
+func ValidatePlayerColor(player string) error {
+	if !ValidPlayerColors[player] {
+		return fmt.Errorf("player must be one of: black, white")
+	}
+	return nil
+}
+
+// ValidateRunOutcome checks that a run outcome value is accepted.
+func ValidateRunOutcome(outcome string) error {
+	if !ValidRunOutcomes[outcome] {
+		return fmt.Errorf("outcome must be one of: active, completed, failed, cancelled")
+	}
+	return nil
+}
+
+// ValidateRunSummary checks that a run summary (if provided) is within length limits.
+func ValidateRunSummary(summary string) error {
+	if len(summary) > MaxRunSummaryLen {
+		return fmt.Errorf("summary must be at most %d characters", MaxRunSummaryLen)
+	}
+	return nil
+}
+
+// ValidateRunMetadata checks that run metadata (if provided) is within length limits.
+func ValidateRunMetadata(metadata string) error {
+	if len(metadata) > MaxRunMetadataLen {
+		return fmt.Errorf("metadata must be at most %d characters", MaxRunMetadataLen)
+	}
+	return nil
+}
+
+// ValidateTicketID checks that a ticket ID matches the expected format (ticket-[hex]).
+func ValidateTicketID(id string) error {
+	if len(id) == 0 {
+		return fmt.Errorf("ticket id is required")
+	}
+	if !strings.HasPrefix(id, "ticket-") || len(id) < 10 {
+		return fmt.Errorf("invalid ticket id format: must start with 'ticket-' and contain a hex suffix")
+	}
+	return nil
+}
+
+// ValidateGameID checks that a game ID is non-empty.
+func ValidateGameID(id string) error {
+	if len(strings.TrimSpace(id)) == 0 {
+		return fmt.Errorf("game id is required")
 	}
 	return nil
 }

@@ -16,6 +16,8 @@ Lightweight Kanban board designed for Human + AI collaboration.
 - ✅ Activity logging / audit trail for all ticket operations
 - ✅ Comments system on tickets
 - ✅ Subtasks (checklist items within tickets)
+- ✅ Task links (parent-child ticket dependencies)
+- ✅ Run history tracking (execution attempts per ticket)
 - ✅ Archive/soft-delete functionality
 - ✅ Priority levels, labels, and due dates
 
@@ -47,6 +49,7 @@ Goban uses two authentication systems:
 | `AuthMiddleware` | `auth/auth.go` | Bearer token validation + user lookup | Active -- used by claim/move/release routes |
 | `AuthMiddlewareWithRole` | `handlers/claim.go` | Token validation with role-based permissions | Active -- used by ticket CRUD, claim, move, release |
 | `AuthMiddlewareWithUser` | `auth/auth.go` | JWT Bearer token + user context | Active -- used by archive routes |
+| `AuthMiddlewareAdmin` | `handlers/admin.go` | HUMAN_ADMIN role enforcement for admin endpoints | Active -- used as middleware on `/api/admin` group |
 | RequestID middleware | `middleware/request_id.go` | Per-request unique ID injection | Active -- registered in main.go |
 | StrictLimiter | `middleware/rate_limiter.go` | 5 req/min brute-force protection on `/api/auth/login` | Active |
 | ModerateLimiter | `middleware/rate_limiter.go` | 10 req/min on `/api/v1/register` and claim routes | Active |
@@ -202,8 +205,14 @@ export GOBAN_API_TOKEN="***"
 # Move ticket between columns
 ./bin/goban-cli move <ticket-id> done
 
-# List tickets in a column
-./bin/goban-cli list-tickets --status todo
+# List tickets (default view: TODO + IN_PROGRESS + REVIEW)
+./bin/goban-cli list-tickets
+
+# Include BACKLOG column in results
+./bin/goban-cli list-tickets --backlog
+
+# Show all columns including DONE and CANCELLED
+./bin/goban-cli list-tickets --full
 
 # List tickets available to claim (not yet claimed)
 ./bin/goban-cli list-available
@@ -212,7 +221,7 @@ export GOBAN_API_TOKEN="***"
 ./bin/goban-cli my-tickets
 
 # Update a ticket's description
-./bin/goban-cli update-description <ticket-id> "New description"
+./bin/goban-cli update-description <ticket-id> --description "New description"
 
 # View ticket details
 ./bin/goban-cli view <ticket-id>
@@ -230,6 +239,15 @@ export GOBAN_API_TOKEN="***"
 ./bin/goban-cli todo         # Return active ticket to TODO
 ./bin/goban-cli backlog     # Return active ticket to BACKLOG
 ./bin/goban-cli cancel      # Move active ticket to CANCELLED
+
+# Task links (parent-child dependencies)
+./bin/goban-cli link <parent_id> <child_id>   # Create dependency between tickets
+./bin/goban-cli unlink <parent_id> <child_id>  # Remove a dependency
+
+# Run history (track execution attempts)
+./bin/goban-cli runs <ticket-id>              # View run history for a ticket
+./bin/goban-cli start <ticket-id>             # Start a new run
+./bin/goban-cli finish <ticket-id>            # Finish the active run
 ```
 
 #### CLI Commands Requiring Token
@@ -311,8 +329,8 @@ No config file needed. The tool reads database settings from:
 # List all users
 ./bin/goban-user-cli list
 
-# Create a new user with role and password
-./bin/goban-user-cli create --username=usernamehere-ai --role=NORMAL_AI --password="secret123"
+# Create a new user (generates API token automatically)
+./bin/goban-user-cli create --username=usernamehere-ai --role=NORMAL_AI
 
 # Update a user's role (user_id=1)
 ./bin/goban-user-cli update 1 --role=OVERSEER_AI
@@ -325,9 +343,6 @@ No config file needed. The tool reads database settings from:
 
 # Delete a user
 ./bin/goban-user-cli delete 1
-
-# Force delete even if user has tickets
-./bin/goban-user-cli delete 1 --force
 ```
 
 #### Role Options
@@ -352,7 +367,7 @@ The tool requires write permissions to the database file. On production systems:
 ```bash
 export GOBAN_PORT=8081
 export GOBAN_CONFIG_PATH=/etc/goban/goban.toml  # Optional config path override
-export GOBAN_STATIC_PATH=/opt/goban/static      # Optional static files path
+export GOBAN_STATIC_PATH=/opt/goban/public      # Optional static files path
 export DB_TYPE=postgres                          # or "sqlite"
 export DB_HOST=localhost
 export DB_USER=goban
@@ -372,7 +387,7 @@ The config file supports `${VAR}` expansion:
 port = "8080"
 db_path = "./goban.db"
 db_type = "sqlite"  # or "postgres"
-static_path = "/opt/goban/static"
+static_path = "/opt/goban/public"
 log_level = "info"   # debug, info, warn, error (controls log verbosity)
 debug = false         # Enable verbose debug logging (gates DEBUG log.Printf calls)
 
@@ -465,6 +480,8 @@ goban/
 │   ├── register.go      # Token self-registration endpoint
 │   ├── auth.go          # JWT login/logout/me/check/refresh routes
 │   ├── go_game.go       # Go game board HTTP handlers (/api/v1/go/* routes)
+│   ├── links.go         # Task linking endpoints (parent-child dependencies)
+│   ├── runs.go          # Run history tracking endpoints
 │   └── sse.go           # Server-sent events for real-time updates
 │
 ├── validation/
@@ -472,7 +489,7 @@ goban/
 │
 ├── models/
 │   ├── ticket.go        # Ticket, Board, Column data structures
-│   ├── types.go         # User, AgentToken, ActivityLog, Comment, Subtask
+│   ├── types.go         # User, AgentToken, ActivityLog, Comment, Subtask, TicketRun, TaskLink
 │   └── game.go          # Game state data structures for Go game feature
 │
 ├── services/
@@ -491,7 +508,8 @@ goban/
 │   ├── store.go         # Factory function
 │   ├── helpers.go       # Utility functions
 │   ├── game_store.go    # GameStore interface definition
-│   └── game_memory_store.go # In-memory game store implementation
+│   ├── game_memory_store.go # In-memory game store implementation
+│   └── fixtures/        # Test and production database fixtures (SQL)
 │
 ├── sse/
 │   └── sse.go           # Server-Sent Events broadcaster
@@ -540,11 +558,13 @@ goban/
 │   │   ├── list_available.go# List tickets available to claim
 │   │   ├── list_boards.go # List all boards
 │   │   ├── list_tickets.go# List all tickets
+│   │   ├── link.go        # Link/unlink parent-child ticket dependencies
 │   │   ├── move.go        # Move ticket between columns
 │   │   ├── my_ticket.go   # Show your claimed tickets
-│   │   ├── release.go     # Release a ticket back to TODO
-│   │   ├── session_commands.go # Session workflow (done/review/todo/backlog/cancel)
 │   │   ├── regenerate_token.go # Regenerate API token command
+│   │   ├── release.go     # Release a ticket back to TODO
+│   │   ├── runs.go        # Run history (runs, start, finish) commands
+│   │   ├── session_commands.go # Session workflow (done/review/todo/backlog/cancel)
 │   │   ├── update_description.go # Update ticket description
 │   │   └── view.go        # View full ticket details
 │   └── internal/        # Internal packages (client, config)
@@ -598,16 +618,21 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for full details.
 **Directory Layout:**
 ```
 /opt/goban/
-├── bin/           # Compiled binary
-│   └── goban
+├── bin/           # Compiled binaries
+│   ├── goban          # Server binary
+│   ├── goban-cli      # CLI tool
+│   └── goban-user-cli # User management CLI
 ├── config/        # Configuration files
 │   └── goban.toml
-├── static/        # Frontend assets (HTML/CSS/JS)
+├── public/        # Frontend assets (HTML/CSS/JS)
 │   ├── index.html
+│   ├── app.js
 │   └── styles/
 └── data/          # Database and runtime data
     └── goban.db
 ```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for full details.
 
 **Manual Deploy:**
 ```bash
@@ -635,9 +660,9 @@ journalctl -u goban -f  # View logs
 
 All ticket operations are logged for audit purposes:
 
-**Event Types (defined):** `created`, `claimed`, `moved`, `reset`, `reviewed`, `completed`, `archived`, `cancelled`, `commented`
+**Event Types (defined):** `created`, `claimed`, `moved`, `reset`, `reviewed`, `completed`, `archived`, `restored`, `cancelled`, `commented`
 
-**Currently logged:** `claimed` (via ClaimService), `moved` (via MoveService), `reset` (via ReleaseService), and `archived`/`restored` (directly in archive.go handlers). The remaining event types (`created`, `reviewed`, `completed`, `cancelled`, `commented`) are defined as constants but not yet emitted. Subtask operations (add/update/delete) do not generate activity logs.
+**Currently logged:** `claimed` (via ClaimService for regular claims, and via runs.go when starting a run), `moved` (via MoveService), `reset` (via ReleaseService and ClaimService for reassignment), `archived`/`restored` (directly in archive.go handlers), `completed` (from runs.go when finishing a run). The remaining event types (`created`, `reviewed`, `cancelled`, `commented`) are defined as constants but not yet emitted. Subtask operations (add/update/delete) and task link operations do not generate activity logs.
 
 **Retrieve Activity Log:**
 ```bash
@@ -696,16 +721,18 @@ curl http://localhost:8080/api/v1/activity/abc123
 
 ### Ticket Operations
 
-> **Note:** All ticket CRUD operations require a Bearer token with role-based access control when accessed through the authenticated route group (`/api/tickets` under `AuthMiddlewareWithRole`). However, production-compatible fallback routes exist at `/api/tickets`, `/api/tickets/:id` (DELETE/PATCH), and `/api/tickets/:id/release` that bypass authentication middleware entirely. These are intentional for web UI compatibility but represent a security consideration for deployments requiring strict auth enforcement.
+> **Note:** Read endpoints (`GET /api/tickets`, `GET /api/tickets/:id`) are public and require no authentication. Write operations (POST, PUT, PATCH, DELETE) require a Bearer token with role-based access control via the authenticated route group under `AuthMiddlewareWithRole`. There are no unauthenticated fallback routes for write operations. Versioned aliases (`/api/v1/tickets`, `/api/v1/tickets/:id`) also exist and serve the same handlers as their non-versioned counterparts.
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| POST | `/api/tickets` | Create new ticket | Token (role-based) via authenticated group; unauthenticated fallback also exists |
-| GET | `/api/tickets` | List all tickets (paginated) | Token (role-based) |
-| GET | `/api/tickets/:id` | Get single ticket details | Token (role-based) |
+| POST | `/api/tickets` | Create new ticket | Token (role-based) |
+| GET | `/api/tickets` | List all tickets (paginated) | No (public) |
+| GET | `/api/v1/tickets` | List all tickets (paginated, versioned alias) | No (public) |
+| GET | `/api/tickets/:id` | Get single ticket details | No (public) |
+| GET | `/api/v1/tickets/:id` | Get single ticket details (versioned alias) | No (public) |
 | PUT | `/api/tickets/:id` | Update ticket fields (full replace) | Token (role-based) |
-| PATCH | `/api/tickets/:id` | Update ticket fields (partial update) | Token (role-based) via authenticated group; unauthenticated fallback also exists |
-| DELETE | `/api/tickets/:id` | Delete ticket permanently | Token (role-based) via authenticated group; unauthenticated fallback also exists |
+| PATCH | `/api/tickets/:id` | Update ticket fields (partial update) | Token (role-based) |
+| DELETE | `/api/tickets/:id` | Delete ticket permanently | Token (role-based) |
 
 ### Claim, Release & Move Operations
 
@@ -736,6 +763,27 @@ All subtask routes require Bearer token authentication (`AuthMiddlewareWithRole`
 | POST | `/api/tickets/:ticketId/subtasks` | Add new subtask to ticket | Token (role-based) |
 | PATCH | `/api/tickets/:ticketId/subtasks?index=:index&completed=true` | Update subtask | Token (role-based) |
 | DELETE | `/api/tickets/:ticketId/subtasks?index=:index` | Delete subtask by index | Token (role-based) |
+
+### Task Links (Parent-Child Dependencies)
+
+Links establish parent-child dependencies between tickets. GET is public; write operations require a Bearer token:
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/api/tickets/:id/links` | Create parent-child link | Token (role-based) |
+| GET | `/api/tickets/:id/links` | List all links for a ticket | No (public) |
+| DELETE | `/api/tickets/:id/links` | Remove a link | Token (role-based) |
+
+### Run History
+
+Runs track execution attempts against tickets. GET is public; write operations require a Bearer token:
+
+| Method | Endpoint | Description | Auth Required |
+|--------|----------|-------------|---------------|
+| POST | `/api/tickets/:id/runs` | Create a new run | Token (role-based) |
+| PUT | `/api/tickets/:id/runs` | Update the active run | Token (role-based) |
+| GET | `/api/tickets/:id/runs` | List all runs for a ticket | No (public) |
+| GET | `/api/tickets/:id/runs/active` | Get current active run | No (public) |
 
 ### Archive Operations
 
@@ -769,20 +817,22 @@ All archive routes require JWT authentication (`AuthMiddlewareWithUser`):
 
 ### Go Game Endpoints
 
-All Go game routes have rate limiting (60 req/min via `GameLimiter`):
+All Go game routes require JWT authentication (`AuthMiddlewareWithUser`) and have rate limiting (60 req/min via `GameLimiter`):
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| POST | `/api/v1/go/games` | Create a new Go game | No |
-| GET | `/api/v1/go/games/:id` | Get game state | No |
-| POST | `/api/v1/go/games/:id/move` | Play a move | No |
-| POST | `/api/v1/go/games/:id/pass` | Pass a turn | No |
-| POST | `/api/v1/go/games/:id/resign` | Resign the game | No |
-| GET | `/api/v1/go/games/:id/score` | Get territory score | No |
-| GET | `/api/v1/go/games/:id/events` | SSE stream for game events | No |
+| POST | `/api/v1/go/games` | Create a new Go game | JWT |
+| GET | `/api/v1/go/games/:id` | Get game state | JWT |
+| POST | `/api/v1/go/games/:id/move` | Play a move | JWT |
+| POST | `/api/v1/go/games/:id/pass` | Pass a turn | JWT |
+| POST | `/api/v1/go/games/:id/resign` | Resign the game | JWT |
+| GET | `/api/v1/go/games/:id/score` | Get territory score | JWT |
+| GET | `/api/v1/go/games/:id/events` | SSE stream for game events | JWT |
 
 ## Changelog of Documentation Audits
 
+- 2026-05-11: Fixed HIGH severity Go game auth documentation — all `/api/v1/go/*` endpoints require `AuthMiddlewareWithUser` (JWT) but were documented as public. Corrected activity logging section: removed non-existent `"auto-promoted"` event from links.go (no activity logging in that handler), added ActivityClaimed emitted by runs.go when starting a run, noted task link operations also lack activity logs. Updated goban-cli README with missing link/unlink and runs/start/finish commands.
+- 2026-05-10: Fixed HIGH severity auth documentation -- removed false claim about unauthenticated fallback routes for ticket write operations (POST/PUT/PATCH/DELETE have no public bypass). Corrected Ticket CRUD table: GET endpoints are public, not token-required. Added missing Links feature docs (API + CLI), Runs feature docs (API + CLI), and AuthMiddlewareAdmin to middleware table. Updated activity logging section with `completed` (runs.go) events. Added task links and run history to Features list. Updated project structure with handlers/links.go, handlers/runs.go, goban-cli/cmd/link.go, goban-cli/cmd/runs.go, store/fixtures/, and TicketRun/TaskLink model types.
 - 2026-05-04: Removed dead code — deleted `handlers/nested.go` (empty stub, content migrated to comments.go/subtasks.go). Cleaned up `.gitignore` dead rules (`!.gobanrc`, `!goban-server/`). Removed "Known Dead Code" section from README (no longer needed).
 - 2026-05-04: Cleaned up dead artifacts — removed root index.html (accidental dev build artifact, app serves public/index.html) and orphaned public/go-board.js.fiber.gz (source go-board.js does not exist). Fixed hardcoded username in goban.toml.example. Added goban.toml.example to README project structure.
 - 2026-05-04: Fixed rate limiter status (all three limiters are active, not dead code). Updated activity logging section to include archived/restored events. Fixed CLI comment flag examples (`--text --who` → `--message`). Added TODO marker to nested.go stub for future removal. Corrected DEPLOYMENT.md static file reference (`style.css` → `tailwind.min.css`). Removed references to deleted `handlers/tokens.go` and non-existent `handlers/index.go`. Added Go game API endpoints, models, services, and store files. Fixed comments/subtasks auth requirements (require token, not public). Added missing CLI commands (`regenerate-token`, `list-comments`). Added `/api/auth/refresh` endpoint. Removed Ansible deploy section (playbook not in repo). Rewrote goban-cli README to match actual commands.

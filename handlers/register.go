@@ -75,9 +75,6 @@ func HandleRegister(c *fiber.Ctx) error {
 	}
 
 	// Return user and full token (only shown once!)
-	if config.Debug {
-		log.Printf("DEBUG Register: Token length=%d", len(token.Token))
-	}
 	tokenResp := &RegisterTokenResponse{
 		ID:        token.ID,
 		AgentName: token.AgentName,
@@ -85,9 +82,6 @@ func HandleRegister(c *fiber.Ctx) error {
 		UserID:    token.UserID,
 		Token:     token.Token, // Full token returned ONCE at creation
 		CreatedAt: token.CreatedAt.Format(time.RFC3339),
-	}
-	if config.Debug {
-		log.Printf("DEBUG Register: tokenResp.Token length=%d", len(tokenResp.Token))
 	}
 	resp := RegisterResponse{User: user, Token: tokenResp}
 	return c.Status(201).JSON(resp)

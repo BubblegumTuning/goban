@@ -150,14 +150,20 @@ goban-cli move abc123 done
 ### Update ticket description
 
 ```bash
-goban-cli update-description abc123 "Updated with new findings"
+goban-cli update-description abc123 --description "Updated with new findings"
 ```
 
 ### List tickets
 
 ```bash
-# List all tickets (paginated)
+# Default view: TODO, IN_PROGRESS, REVIEW columns
 goban-cli list-tickets
+
+# Include BACKLOG column in results
+goban-cli list-tickets --backlog
+
+# Show ALL columns including DONE and CANCELLED
+goban-cli list-tickets --full
 
 # List tickets available to claim (not yet claimed)
 goban-cli list-available
@@ -222,15 +228,43 @@ If your token has been compromised, regenerate it:
 
 ```bash
 goban-cli regenerate-token
+# For a different user ID (requires admin privileges)
+goban-cli regenerate-token --user-id 2
+```
+
+### Task links (parent-child dependencies)
+
+Link tickets to establish parent-child dependency relationships:
+
+```bash
+# Create a link between two tickets
+goban-cli link <parent_id> <child_id>
+
+# Remove an existing link
+goban-cli unlink <parent_id> <child_id>
+```
+
+### Run history (execution tracking)
+
+Track execution attempts against tickets:
+
+```bash
+# View run history for a ticket
+goban-cli runs <ticket-id>
+
+# Start a new run on a ticket
+goban-cli start <ticket-id>
+
+# Finish the active run on a ticket
+goban-cli finish <ticket-id>
 ```
 
 ## Authentication
 
 Commands that modify state (claim, move, release, create, delete, update) require an API token. Set it via one of these methods (in order of priority):
 
-1. Command-line flag: `--token ***`
-2. Environment variable: `GOBAN_API_TOKEN=***`
-3. Config file: `api.api_token` in `~/.goban/config.yaml`
+1. Environment variable: `GOBAN_API_TOKEN=***`
+2. Config file: `api.api_token` in `~/.goban/config.yaml`
 
 ## AI Agent Integration Example
 
@@ -279,7 +313,12 @@ This CLI wraps the following Goban REST API endpoints:
 | `my-tickets` | `/api/boards/:boardID` (filter assigned to user) | GET |
 | `comment <ticket-id>` | `/api/tickets/:id/comments` | POST (auth) |
 | `list-comments <ticket-id>` | `/api/tickets/:id/comments` | GET (auth) |
-| `batch-done <ids...>` | `/api/v1/tickets/:id/move` × N | POST (auth) |
-| `batch-cancel <ids...>` | `/api/v1/tickets/:id/move` × N | POST (auth) |
+| `batch-done <ids...>` | `/api/v1/tickets/:id/move` x N | POST (auth) |
+| `batch-cancel <ids...>` | `/api/v1/tickets/:id/move` x N | POST (auth) |
 | `done/review/todo/backlog/cancel` | `/api/v1/tickets/:id/move` (session ticket) | POST (auth) |
-| `regenerate-token` | `/api/admin/users/:id/token-regenerate` | POST (admin auth) |
+| `link <parent> <child>` | `/api/tickets/<child>/links` | POST (auth) |
+| `unlink <parent> <child>` | `/api/tickets/<child>/links?parent=<parent>` | DELETE (auth) |
+| `runs <ticket-id>` | `/api/tickets/:id/runs` | GET |
+| `start <ticket-id>` | `/api/tickets/:id/runs` | POST (auth) |
+| `finish <ticket-id>` | `/api/tickets/:id/runs?run_id=<id>` | PUT (auth) |
+| `regenerate-token` | `/api/admin/users/:id/token-regenerate` | POST (token + role-based) |

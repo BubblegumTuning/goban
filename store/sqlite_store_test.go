@@ -1335,3 +1335,127 @@ func TestSQLiteStore_UserTimestamps(t *testing.T) {
 		t.Error("User CreatedAt and UpdatedAt should not be zero")
 	}
 }
+func TestSQLiteStore_CreateOrGetTicket(t *testing.T) {
+	store := newTestStore(t)
+	defer os.Remove(store.config.DBPath)
+
+	// First call with idempotency key should create a new ticket
+	ticket1 := &models.Ticket{
+		ID:             models.GenerateTicketID(),
+		Title:          "Idempotent Ticket",
+		Description:    "Created via CreateOrGetTicket",
+		Priority:       "medium",
+		Column:         "todo-0",
+		BoardID:        "test-board-1",
+		IdempotencyKey: "unique-key-abc",
+	}
+	result1, err := store.CreateOrGetTicket(ticket1)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket(1st): unexpected error: %v", err)
+	}
+
+	// Should be a newly created ticket with generated ID
+	if result1.ID == "" {
+		t.Fatal("Expected non-empty ticket ID")
+	}
+	expectedID := result1.ID
+
+	// Second call with same idempotency key should return the existing ticket
+	ticket2 := &models.Ticket{
+		ID:             models.GenerateTicketID(),
+		Title:          "Duplicate Ticket",
+		Description:    "Should not be created",
+		Priority:       "low",
+		Column:         "todo-0",
+		BoardID:        "test-board-1",
+		IdempotencyKey: "unique-key-abc",
+	}
+	result2, err := store.CreateOrGetTicket(ticket2)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket(2nd): unexpected error: %v", err)
+	}
+
+	// Should return the same ticket (same ID, original title preserved)
+	if result2.ID != expectedID {
+		t.Errorf("Expected existing ticket ID %s, got %s", expectedID, result2.ID)
+	}
+	if result2.Title != "Idempotent Ticket" {
+		t.Errorf("Expected original title 'Idempotent Ticket', got %q", result2.Title)
+	}
+
+	// Call with no idempotency key should always create a new ticket
+	ticket3 := &models.Ticket{
+		ID:          models.GenerateTicketID(),
+		Title:       "No Key Ticket",
+		Description: "Should be created fresh each time",
+		Column:      "todo-0",
+		BoardID:     "test-board-1",
+	}
+	result3, err := store.CreateOrGetTicket(ticket3)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket(no key): unexpected error: %v", err)
+	}
+
+	// Call again with no key should create another new ticket (different ID)
+	ticket4 := &models.Ticket{
+		ID:          models.GenerateTicketID(),
+		Title:       "Another No Key Ticket",
+		Column:      "todo-0",
+		BoardID:     "test-board-1",
+	}
+	result4, err := store.CreateOrGetTicket(ticket4)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket(no key 2nd): unexpected error: %v", err)
+	}
+
+	if result3.ID == result4.ID {
+		t.Errorf("Expected different IDs for tickets without idempotency key, both got %s", result3.ID)
+	}
+
+	// Verify that archived tickets don't block new creation with same key
+	// Create a user first for the FK constraint on archived_by
+	adminID, err := store.CreateUser("test-admin", models.RoleHumanAdmin)
+	if err != nil {
+		t.Fatalf("CreateUser: unexpected error: %v", err)
+	}
+
+	archivedTicket := &models.Ticket{
+		ID:             models.GenerateTicketID(),
+		Title:          "Archived Ticket",
+		Column:         "todo-0",
+		BoardID:        "test-board-1",
+		IdempotencyKey: "unique-key-xyz",
+	}
+	r, err := store.CreateOrGetTicket(archivedTicket)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket (archived setup): unexpected error: %v", err)
+	}
+
+	// Archive it with valid admin user ID
+	err = store.ArchiveTicket(r.ID, adminID)
+	if err != nil {
+		t.Fatalf("ArchiveTicket: unexpected error: %v", err)
+	}
+
+	// Now create with same key should succeed (archived ticket is ignored)
+	newAfterArchived := &models.Ticket{
+		ID:             models.GenerateTicketID(),
+		Title:          "New After Archived",
+		Column:         "todo-0",
+		BoardID:        "test-board-1",
+		IdempotencyKey: "unique-key-xyz",
+	}
+	r2, err := store.CreateOrGetTicket(newAfterArchived)
+	if err != nil {
+		t.Fatalf("CreateOrGetTicket (after archive): unexpected error: %v", err)
+	}
+
+	// Should be a new ticket, not the archived one
+	if r2.ID == r.ID {
+		t.Errorf("Expected new ticket ID after archiving old one with same key")
+	}
+	if r2.Title != "New After Archived" {
+		t.Errorf("Expected title 'New After Archived', got %q", r2.Title)
+	}
+}
+

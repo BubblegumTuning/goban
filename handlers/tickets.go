@@ -157,22 +157,23 @@ func handleUpdateTicket(c *fiber.Ctx) error {
 							log.Printf("DEBUG: Labels field is nil in request")
 						}
 					}
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
+		t.UpdatedAt = time.Now().Format(time.RFC3339)
 
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist ticket %s to database: %v", id, err)
-					} else {
-						log.Printf("Updated ticket %s (partial update) - persisted to DB", id)
-						// Sync in-memory cache since we already hold mu.Lock()
-						syncTicketInMemory(t)
-					}
+				if err := saveTicketToDB(t); err != nil {
+					log.Printf("ERROR: Failed to persist ticket %s to database: %v", id, err)
+					return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to persist update: %v", err)})
+				}
 
-					sse.Emit("update", id, boardID, fiber.Map{
-						"title":  t.Title,
-						"column": t.Column,
-					})
+				log.Printf("Updated ticket %s (partial update) - persisted to DB", id)
+				// Sync in-memory cache since we already hold mu.Lock()
+				syncTicketInMemory(t)
 
-					return c.JSON(t) // Return full ticket object for CLI compatibility
+				sse.Emit("update", id, boardID, fiber.Map{
+					"title":  t.Title,
+					"column": t.Column,
+				})
+
+				return c.JSON(t) // Return full ticket object for CLI compatibility
 				}
 			}
 		}
@@ -190,13 +191,14 @@ func saveTicketToDB(ticket *models.Ticket) error {
 
 // CreateRequestSimple is for the simplified /api/tickets endpoint (production compatible)
 type CreateRequestSimple struct {
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Priority    string   `json:"priority,omitempty"`
-	Assignee    string   `json:"assignee,omitempty"`
-	DueDate     string   `json:"due_date,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	BoardID     string   `json:"board_id"`
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	Priority       string   `json:"priority,omitempty"`
+	Assignee       string   `json:"assignee,omitempty"`
+	DueDate        string   `json:"due_date,omitempty"`
+	Labels         []string `json:"labels,omitempty"`
+	BoardID        string   `json:"board_id"`
+	IdempotencyKey string   `json:"idempotency_key,omitempty"`
 }
 
 // handleCreateTicketSimple is the production-compatible endpoint that takes board_id in body
@@ -237,17 +239,27 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Board not found"})
 	}
 
+	// Get idempotency key from header or query parameter if not in body
+	idempKey := req.IdempotencyKey
+	if idempKey == "" {
+		idempKey = c.Get("X-Idempotency-Key")
+	}
+	if idempKey == "" {
+		idempKey = c.Query("key")
+	}
+
 	newTicket := &models.Ticket{
-		ID:          models.GenerateTicketID(),
-		Title:       req.Title,
-		Description: req.Description,
-		Priority:    normalizePriority(req.Priority),
-		Assignee:    req.Assignee,
-		Labels:      req.Labels,
-		BoardID:     boardID,
-		Column:      "todo-0", // Use canonical -0 suffix format for consistency
-		CreatedAt:   time.Now().Format(time.RFC3339),
-		UpdatedAt:   time.Now().Format(time.RFC3339),
+		ID:             models.GenerateTicketID(),
+		Title:          req.Title,
+		Description:    req.Description,
+		Priority:       normalizePriority(req.Priority),
+		Assignee:       req.Assignee,
+		Labels:         req.Labels,
+		BoardID:        boardID,
+		Column:         "todo-0", // Use canonical -0 suffix format for consistency
+		IdempotencyKey: idempKey,
+		CreatedAt:      time.Now().Format(time.RFC3339),
+		UpdatedAt:      time.Now().Format(time.RFC3339),
 	}
 
 	// Set DueDate only if provided (needs pointer conversion)
@@ -263,23 +275,43 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 		}
 	}
 
-	// Persist to database using CreateTicket for new tickets (not UpdateTicket)
+	// Persist to database — use CreateOrGetTicket for idempotent creation
+	var createdTicket *models.Ticket
+	type orgeStore interface {
+		CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error)
+	}
 	if dbStore != nil {
-		err := dbStore.CreateTicket(newTicket)
-		if err != nil {
-			log.Printf("ERROR: Failed to persist ticket %s to database: %v", newTicket.ID, err)
-			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", err)})
+		if ogs, ok := interface{}(dbStore).(orgeStore); ok {
+			var createErr error
+			createdTicket, createErr = ogs.CreateOrGetTicket(newTicket)
+			if createErr != nil {
+				log.Printf("ERROR: Failed to create ticket via CreateOrGetTicket: %v", createErr)
+				return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", createErr)})
+			}
+		} else {
+			// Fallback for stores without CreateOrGetTicket (should not happen in production)
+			if err := dbStore.CreateTicket(newTicket); err != nil {
+				log.Printf("ERROR: Failed to persist ticket %s to database: %v", newTicket.ID, err)
+				return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", err)})
+			}
+			createdTicket = newTicket
 		}
+	} else {
+		createdTicket = newTicket
 	}
 
-	log.Printf("Created ticket %s on board %s (simple endpoint)", newTicket.ID, boardID)
+	log.Printf("Created ticket %s on board %s (simple endpoint)", createdTicket.ID, boardID)
 
-	sse.Emit("create", newTicket.ID, boardID, fiber.Map{
-		"title":  newTicket.Title,
-		"column": newTicket.Column,
+	sse.Emit("create", createdTicket.ID, boardID, fiber.Map{
+		"title":  createdTicket.Title,
+		"column": createdTicket.Column,
 	})
 
-	return c.Status(201).JSON(newTicket)
+	// Return 201 for newly created, 200 for existing (idempotent lookup)
+	if createdTicket == newTicket {
+		return c.Status(201).JSON(createdTicket)
+	}
+	return c.Status(200).JSON(createdTicket)
 }
 
 // PaginatedTicketsResponse wraps paginated tickets with metadata.
@@ -420,6 +452,17 @@ func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
 	ticketGroup.Put("/:id", func(c *fiber.Ctx) error { return handleUpdateTicket(c) })
 	ticketGroup.Patch("/:id", func(c *fiber.Ctx) error { return handleUpdateTicket(c) })
 	ticketGroup.Delete("/:id", func(c *fiber.Ctx) error { return handleDeleteTicket(c) })
+
+	// Task link endpoints (POST/GET/DELETE /api/tickets/:id/links)
+	ticketGroup.Post("/:id/links", handleAddLink)
+	publicTickets.Get("/:id/links", handleGetLinks)
+	ticketGroup.Delete("/:id/links", handleRemoveLink)
+
+	// Run history endpoints (POST/GET/PUT /api/tickets/:id/runs)
+	ticketGroup.Post("/:id/runs", handleCreateRun)
+	publicTickets.Get("/:id/runs", handleGetRuns)
+	publicTickets.Get("/:id/runs/active", handleGetActiveRun)
+	ticketGroup.Put("/:id/runs", handleUpdateRun)
 
 	if config.Debug {
 		log.Println("DEBUG: Registered ticket CRUD routes [split read/write]")

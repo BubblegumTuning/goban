@@ -24,6 +24,7 @@ type TicketStore interface {
 
 	// CRUD operations for tickets
 	CreateTicket(t *models.Ticket) error
+	CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error) // Idempotent: returns existing ticket if idempotency_key matches
 	GetAllTickets() ([]*models.Ticket, error)
 	GetPaginatedTickets(p Pagination) ([]*models.Ticket, int64, error) // (tickets, totalCount, err)
 	GetTicket(id string) (*models.Ticket, error)
@@ -71,6 +72,17 @@ type TicketStore interface {
 	// Token-User relationship operations
 	UpdateTokenUserID(tokenHash string, userID int64) error
 	GetUserByToken(tokenHash string) (*models.User, error)
+
+	// TaskLink operations for parent/child dependencies
+	AddTaskLink(parentID, childID string) error
+	RemoveTaskLink(parentID, childID string) error
+	GetTaskLinks(ticketID string) (parents []string, children []string, err error)
+
+	// TicketRun operations for per-attempt tracking (ticket-2b0f57e014)
+	CreateRun(r *models.TicketRun) (*models.TicketRun, error)
+	GetRuns(ticketID string) ([]*models.TicketRun, error)
+	UpdateRun(runID int64, outcome string, summary string, metadata string) error
+	GetActiveRun(ticketID string) (*models.TicketRun, error)
 
 	// Activity log operations for audit trail
 	CreateActivityLog(log *models.ActivityLog) (int64, error)

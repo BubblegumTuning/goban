@@ -138,6 +138,45 @@ func TestRequestID_ResponseStatusCodeUnaffected(t *testing.T) {
 	}
 }
 
+func TestRequestID_PreservesUpstreamHeader(t *testing.T) {
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Use(RequestID())
+	var capturedID string
+	app.Get("/test", func(c *fiber.Ctx) error {
+		capturedID, _ = c.Locals(requestIDKey).(string)
+		return c.SendString("OK")
+	})
+
+	upstreamID := "my-upstream-trace-id"
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("X-Request-ID", upstreamID)
+
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+
+	responseID := resp.Header.Get("X-Request-ID")
+	if responseID != upstreamID {
+		t.Errorf("Expected upstream X-Request-ID to be preserved (%s), got %q", upstreamID, responseID)
+	}
+
+	if capturedID != upstreamID {
+		t.Errorf("Expected Locals to contain upstream ID (%s), got %q", upstreamID, capturedID)
+	}
+
+	// Verify generated IDs still work when no upstream header provided
+	resp2, err := app.Test(httptest.NewRequest("GET", "/test", nil))
+	if err != nil {
+		t.Fatalf("Second request failed: %v", err)
+	}
+
+	responseID2 := resp2.Header.Get("X-Request-ID")
+	if responseID2 == "" || len(responseID2) != 16 {
+		t.Errorf("Expected auto-generated 16-char ID when no upstream header, got %q", responseID2)
+	}
+}
+
 // ============================================================================
 // Rate Limiter Tests (StrictLimiter, ModerateLimiter, GameLimiter)
 

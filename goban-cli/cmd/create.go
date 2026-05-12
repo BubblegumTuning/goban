@@ -46,7 +46,9 @@ var createCmd = &cobra.Command{
 
 		ctx := cmd.Context()
 
-		ticket, classErr := client.SafeCreate(ctx, boardID, types.CreateTicketRequest{Title: title, Description: description, Column: column, BoardID: boardID})
+		idempKey, _ := cmd.Flags().GetString("idempotency-key")
+	parents, _ := cmd.Flags().GetStringSlice("parents")
+	ticket, classErr := client.SafeCreate(ctx, boardID, types.CreateTicketRequest{Title: title, Description: description, Column: column, BoardID: boardID, IdempotencyKey: idempKey, Parents: parents})
 		if classErr != nil {
 			return classErr
 		}
@@ -68,5 +70,7 @@ func init() {
 	createCmd.Flags().StringP("title", "t", "", "Ticket title (required)")
 	createCmd.Flags().StringP("description", "d", "", "Ticket description")
 	createCmd.Flags().StringP("column", "c", "todo", "Initial column (backlog, todo, inprogress, review, done)")
+	createCmd.Flags().StringP("idempotency-key", "k", "", "Idempotency key — duplicate creates with the same key return the existing ticket")
+	createCmd.Flags().StringSliceP("parents", "p", nil, "Parent ticket IDs (comma-separated or repeated)")
 	rootCmd.AddCommand(createCmd)
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,18 +21,32 @@ var (
 	subMu            sync.RWMutex                 // Protects subscribers map
 	nextSubscriberID int64                        // Atomic counter for IDs
 	droppedEvents    int64                        // Metric: dropped events
+	maxSubscribers   int                          // Maximum concurrent subscriber limit (DoS protection)
 )
 
-// Init initializes the SSE subsystem.
+const defaultMaxSubscribers = 100 // Default: 100 concurrent SSE connections maximum
+
+// Init initializes the SSE subsystem with a configurable buffer size.
 func Init(bufferSize int) {
 	if bufferSize <= 0 {
 		bufferSize = 100
 	}
 	broadcastChan = make(chan models.SSEEvent, bufferSize)
 	subscribers = make(map[int64]*models.Subscriber)
+	maxSubscribers = defaultMaxSubscribers
 
 	go broadcastLoop()
-	log.Println("SSE initialized with buffer size:", bufferSize)
+	log.Println("SSE initialized with buffer size:", bufferSize, "| max subscribers:", maxSubscribers)
+}
+
+// SetMaxSubscribers configures the maximum concurrent SSE subscriber limit.
+// Call this before Init if you need a non-default value.
+func SetMaxSubscribers(max int) {
+	if max <= 0 {
+		max = defaultMaxSubscribers
+	}
+	maxSubscribers = max
+	log.Println("SSE max subscribers configured:", maxSubscribers)
 }
 
 // broadcastLoop continuously broadcasts events to all subscribers.
@@ -101,6 +116,16 @@ func Subscribe(boardID string, bufferSize int) (*models.Subscriber, error) {
 		bufferSize = 10
 	}
 
+	subMu.RLock()
+	currentCount := len(subscribers)
+	subMu.RUnlock()
+
+	// Enforce maximum subscriber limit to prevent DoS/resource exhaustion attacks.
+	if currentCount >= maxSubscribers {
+		log.Printf("Warning: SSE subscription rejected — limit reached (%d/%d)", currentCount, maxSubscribers)
+		return nil, fmt.Errorf("too many active subscribers (limit: %d)", maxSubscribers)
+	}
+
 	id := atomic.AddInt64(&nextSubscriberID, 1)
 	sub := &models.Subscriber{
 		ID:        id,
@@ -112,9 +137,16 @@ func Subscribe(boardID string, bufferSize int) (*models.Subscriber, error) {
 
 	subMu.Lock()
 	subscribers[id] = sub
+	actualCount := len(subscribers)
 	subMu.Unlock()
 
-	log.Printf("SSE subscriber %d connected (board: %s)", id, boardID)
+	if actualCount >= maxSubscribers {
+		log.Printf("Warning: SSE subscriber count at maximum capacity (%d/%d)", actualCount, maxSubscribers)
+	} else if actualCount >= int(float64(maxSubscribers)*0.8) {
+		log.Printf("Notice: SSE subscriber count approaching limit (%d/%d)", actualCount, maxSubscribers)
+	}
+
+	log.Printf("SSE subscriber %d connected (board: %s, total: %d/%d)", id, boardID, actualCount, maxSubscribers)
 	return sub, nil
 }
 
@@ -135,7 +167,11 @@ func HandleSSE(c *fiber.Ctx) error {
 
 	sub, err := Subscribe(boardID, 10)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": "Failed to create subscription"})
+		// Distinguish between rate limiting and internal errors.
+		if strings.Contains(err.Error(), "too many active subscribers") {
+			return c.Status(503).JSON(fiber.Map{"error": "SSE service at capacity — too many active connections"})
+		}
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create subscription: " + err.Error()})
 	}
 
 	fctx := c.Context()
@@ -165,7 +201,11 @@ func HandleSSE(c *fiber.Ctx) error {
 					return // Channel closed
 				}
 
-				data, _ := json.Marshal(event)
+				data, marshalErr := json.Marshal(event)
+				if marshalErr != nil {
+					log.Printf("ERROR: Failed to marshal SSE event: %v", marshalErr)
+					continue // Skip this event and try the next one
+				}
 				fmt.Fprintf(w, "event: update\ndata: %s\n\n", data)
 				w.Flush()
 

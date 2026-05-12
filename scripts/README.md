@@ -1,108 +1,87 @@
-# Goban Migration Scripts
+# Goban Deployment Scripts
 
-These scripts handle migrating data from SQLite to PostgreSQL (and back if needed).
+## Quick Reference
 
-## Prerequisites
+| What you want to do | Command |
+|---|---|
+| Local development build | `make dev` (or `./build.sh`) |
+| Build + package for deployment | `make package` |
+| Deploy locally (this machine) | `sudo ./scripts/build-and-deploy-local.sh` |
+| Deploy remotely via SSH/rsync | `./scripts/deploy.sh <host> [user]` |
+| Create distributable tarball | `make release` |
 
-```bash
-pip install psycopg2-binary  # Required for PostgreSQL operations
-```
+## Workflow
 
-## Workflow Overview
+### Local Deployment (Production Machine)
 
-1. **Export** - Dump existing SQLite data to JSON backup file
-2. **Import** - Load JSON into PostgreSQL with type conversions
-3. **Verify** - Compare record counts between source and target
-4. **(Optional) Rollback** - Restore from PostgreSQL back to SQLite if needed
+1. **Clone/fetch latest code** (manual step):
+   ```bash
+   cd ~/goban
+   git pull origin master
+   ```
 
-## Step-by-Step Migration Guide
+2. **Build and deploy in one command**:
+   ```bash
+   sudo ./scripts/build-and-deploy-local.sh
+   ```
 
-### 1. Export from SQLite (Backup First!)
+This single command:
+- Validates source has both `bin/` AND `public/` (runs `make package` if needed)
+- Creates `/opt/goban/{bin,config,public/styles,data}` directories
+- Deploys binaries + frontend assets (rsync --delete removes stale files)
+- Regenerates `.fiber.gz` companion files on target
+- Restarts systemd service
+- Verifies health check and all critical assets return HTTP 200
 
-```bash
-python3 migrate_sqlite_to_postgres.py export \
-    --source /path/to/goban.db \
-    --output goban_backup_$(date +%Y%m%d).json
-```
-
-This creates a JSON file with all tickets and tokens, preserving:
-- All ticket fields (title, description, labels, subtasks, comments)
-- Timestamps in ISO format
-- Original IDs as references (new UUIDs generated for PostgreSQL)
-
-### 2. Import to PostgreSQL (Dry Run First!)
-
-```bash
-# Preview what will be imported (no changes made)
-python3 migrate_sqlite_to_postgres.py import \
-    --input goban_backup_YYYYMMDD.json \
-    --postgres "postgresql://kanban:password@localhost:5432/goban_test" \
-    --dry-run
-
-# Actually perform the import
-python3 migrate_sqlite_to_postgres.py import \
-    --input goban_backup_YYYYMMDD.json \
-    --postgres "postgresql://kanban:password@localhost:5432/goban_test"
-```
-
-### 3. Verify Migration Integrity
+### Remote Deployment (from development machine)
 
 ```bash
-python3 migrate_sqlite_to_postgres.py verify \
-    --sqlite /path/to/goban.db \
-    --postgres "postgresql://kanban:password@localhost:5432/goban_test"
+./scripts/deploy.sh 192.168.88.30 goban
 ```
 
-This compares record counts, field types, and data integrity between source and target.
+This builds locally, then deploys to the remote host via SSH/rsync with full verification.
 
-### 4. (Optional) Rollback to SQLite
+## Build Targets (Makefile)
 
-If you need to revert back to SQLite after migrating to PostgreSQL:
+| Target | Description |
+|---|---|
+| `make build` | Compile binaries only (`bin/goban`, `bin/goban-cli`, `bin/goban-user-cli`) |
+| `make package` | Full deployable artifact: binaries + public/ + .fiber.gz files |
+| `make release` | Create distributable `.tar.gz` from packaged output (CI uses this) |
+| `make dev` | Local development build with symlink to source `public/` |
+| `make clean` | Remove all build artifacts |
 
-```bash
-python3 rollback_postgres_to_sqlite.py \
-    --postgres "postgresql://kanban:password@localhost:5432/goban_test" \
-    --sqlite /path/to/goban.db
+**Important:** Use `make package`, not `make build`, when preparing for deployment. The `build` target only compiles Go binaries and does not include frontend assets. Deploying without frontend assets will result in a server that cannot serve the UI.
+
+## Directory Structure (Production)
+
 ```
-
-This will:
-- Auto-backup the current SQLite file with timestamp suffix
-- Clear existing tables and import from PostgreSQL
-- Convert types back (UUID to TEXT, JSONB to TEXT, TIMESTAMP to DATETIME)
-
-## Type Conversions
-
-| Field       | SQLite      | PostgreSQL  | Notes                              |
-|-------------|-------------|-------------|------------------------------------|
-| id          | TEXT        | UUID        | New UUID generated, old kept as ref|
-| labels      | TEXT (JSON) | JSONB       | Array of strings                   |
-| subtasks    | TEXT (JSON) | JSONB       | Nested array structure             |
-| comments    | TEXT (JSON) | JSONB       | Nested array with timestamps       |
-| due_date    | TEXT        | TIMESTAMP   | ISO format                         |
-| created_at  | TEXT        | TIMESTAMP   | ISO format                         |
-| updated_at  | TEXT        | TIMESTAMP   | ISO format                         |
+/opt/goban/
+├── bin/
+│   ├── goban           # Server binary
+│   ├── goban-cli       # Admin CLI
+│   └── goban-user-cli  # User CLI
+├── config/
+│   └── goban.toml      # Production configuration
+├── data/               # Database files (SQLite)
+└── public/             # Frontend assets
+    ├── index.html
+    ├── app.js
+    ├── go-board.html
+    ├── login.html
+    └── styles/
+        ├── tailwind.min.css
+        ├── font-awesome.min.css
+        └── *.fiber.gz  # Compressed companions
+```
 
 ## Troubleshooting
 
-**"role does not exist" error**: PostgreSQL user must be created first
+**"public/ directory is missing or empty"** - You ran `make build` instead of `make package`. The deploy scripts require both binaries and frontend assets. Run `make package` first, then retry deployment.
+
+**"Service failed to start"** - Check systemd logs:
 ```bash
-sudo -u postgres createuser -s kanban
-sudo -u postgres psql -c "CREATE DATABASE goban_test OWNER kanban;"
+sudo journalctl -u goban -n 20 --no-pager
 ```
 
-**Connection refused**: Ensure PostgreSQL is running
-```bash
-systemctl status postgresql
-```
-
-**psycopg2 not installed**:
-```bash
-pip install psycopg2-binary
-```
-
-## Notes
-
-- Migration scripts generate new UUIDs for tickets in PostgreSQL
-- Original SQLite IDs are preserved as `old_id` field in export JSON
-- Token hashes remain unchanged (same credentials work after migration)
-- Always test on staging database before production migration
+**Frontend assets return 404 after deployment** - Verify the `static_path` in `/opt/goban/config/goban.toml` points to `/opt/goban/public`. The server reads this from config before falling back to the binary's directory.

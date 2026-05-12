@@ -310,9 +310,9 @@ func HandleAdminRegenerateToken(c *fiber.Ctx) error {
 	oldTokens, _ := auth.ListTokens()
 	for _, t := range oldTokens {
 		if t.UserID == int64(userID) && t.AgentName == existingUser.Name {
-			log.Printf("[ADMIN.AUDIT] Revoking old token %s for user %s", t.TokenName, existingUser.Name)
+			log.Printf("[ADMIN.AUDIT] Revoking old token for user %s", existingUser.Name)
 			if revErr := auth.RevokeToken(t.AgentName); revErr != nil {
-				log.Printf("[ADMIN.ERROR] Failed to revoke old token %s: %v", t.TokenName, revErr)
+				log.Printf("[ADMIN.ERROR] Failed to revoke old token for user %s: %v", existingUser.Name, revErr)
 			}
 		}
 	}

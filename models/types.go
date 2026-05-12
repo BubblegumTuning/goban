@@ -24,11 +24,12 @@ type Board struct {
 
 // Ticket represents a work item on the board.
 type Ticket struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Priority    string    `json:"priority"` // low, medium, high, critical
-	Assignee    string    `json:"assignee"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	Priority        string    `json:"priority"` // low, medium, high, critical
+	Assignee        string    `json:"assignee"`
+	IdempotencyKey  string    `json:"idempotency_key,omitempty"`
 	Column      string    `json:"column"` // Column ID (e.g., "todo-0")
 	BoardID     string    `json:"board_id"`
 	Labels      []string  `json:"labels,omitempty"`
@@ -267,3 +268,21 @@ const (
 	ActivityCancelled = "cancelled"
 	ActivityCommented = "commented"
 )
+
+// TicketRun tracks a single claim-completion cycle for a ticket.
+type TicketRun struct {
+	ID        int64      `json:"id" db_type:"INTEGER PRIMARY KEY AUTOINCREMENT"`
+	TicketID  string     `json:"ticket_id" db_type:"TEXT NOT NULL"`
+	Outcome   string     `json:"outcome" db_type:"TEXT NOT NULL DEFAULT 'active'"` // active, completed, released, blocked
+	StartedAt time.Time  `json:"started_at" db_type:"TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"`
+	EndedAt   *time.Time `json:"ended_at,omitempty" db_type:"TIMESTAMP"`
+	Summary   string     `json:"summary,omitempty" db_type:"TEXT DEFAULT ''"`
+	Metadata  string     `json:"metadata,omitempty" db_type:"TEXT DEFAULT ''"` // JSON blob
+	Actor     string     `json:"actor" db_type:"TEXT NOT NULL"`
+}
+
+// TaskLink represents a parent-child dependency between tickets.
+type TaskLink struct {
+	ParentID string `json:"parent_id" db_type:"TEXT NOT NULL"`
+	ChildID  string `json:"child_id" db_type:"TEXT NOT NULL"`
+}

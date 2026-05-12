@@ -477,3 +477,190 @@ func TestNormalizePriority_EdgeCases(t *testing.T) {
 		t.Errorf("NormalizePriority with tabs = (%q, %v), expected (\"low\", true)", result, ok)
 	}
 }
+
+// ============================================================================
+// ValidateBoardSize Tests
+
+func TestValidateBoardSize_Valid(t *testing.T) {
+	for _, size := range []int{9, 13, 19} {
+		if err := ValidateBoardSize(size); err != nil {
+			t.Errorf("ValidateBoardSize(%d) should be valid, got error: %v", size, err)
+		}
+	}
+}
+
+func TestValidateBoardSize_Invalid(t *testing.T) {
+	for _, size := range []int{0, 7, 15, 21, -1} {
+		err := ValidateBoardSize(size)
+		if err == nil {
+			t.Errorf("ValidateBoardSize(%d) should have failed, got nil", size)
+		} else if !strings.Contains(err.Error(), "board_size must be one of: 9, 13, or 19") {
+			t.Errorf("Unexpected error for %d: %v", size, err)
+		}
+	}
+}
+
+// ============================================================================
+// ValidatePlayerColor Tests
+
+func TestValidatePlayerColor_Valid(t *testing.T) {
+	for _, color := range []string{"black", "white"} {
+		if err := ValidatePlayerColor(color); err != nil {
+			t.Errorf("ValidatePlayerColor(%q) should be valid, got error: %v", color, err)
+		}
+	}
+}
+
+func TestValidatePlayerColor_Invalid(t *testing.T) {
+	for _, color := range []string{"", "red", "Blue", "WHITE"} {
+		err := ValidatePlayerColor(color)
+		if err == nil {
+			t.Errorf("ValidatePlayerColor(%q) should have failed, got nil", color)
+		} else if !strings.Contains(err.Error(), "player must be one of: black, white") {
+			t.Errorf("Unexpected error for %q: %v", color, err)
+		}
+	}
+}
+
+// ============================================================================
+// ValidateRunOutcome Tests
+
+func TestValidateRunOutcome_Valid(t *testing.T) {
+	for _, outcome := range []string{"active", "completed", "failed", "cancelled"} {
+		if err := ValidateRunOutcome(outcome); err != nil {
+			t.Errorf("ValidateRunOutcome(%q) should be valid, got error: %v", outcome, err)
+		}
+	}
+}
+
+func TestValidateRunOutcome_Invalid(t *testing.T) {
+	for _, outcome := range []string{"", "done", "in-progress", "ACTIVE"} {
+		err := ValidateRunOutcome(outcome)
+		if err == nil {
+			t.Errorf("ValidateRunOutcome(%q) should have failed, got nil", outcome)
+		} else if !strings.Contains(err.Error(), "outcome must be one of: active, completed, failed, cancelled") {
+			t.Errorf("Unexpected error for %q: %v", outcome, err)
+		}
+	}
+}
+
+// ============================================================================
+// ValidateRunSummary Tests
+
+func TestValidateRunSummary_Valid(t *testing.T) {
+	validSummaries := []string{
+		"",                                     // Empty is allowed
+		"Short summary",                        // Normal summary
+		strings.Repeat("x", MaxRunSummaryLen),  // Maximum length (512 chars)
+	}
+
+	for _, s := range validSummaries {
+		if err := ValidateRunSummary(s); err != nil {
+			t.Errorf("ValidateRunSummary with len=%d should be valid, got error: %v", len(s), err)
+		}
+	}
+}
+
+func TestValidateRunSummary_TooLong(t *testing.T) {
+	err := ValidateRunSummary(strings.Repeat("x", MaxRunSummaryLen+1))
+	if err == nil {
+		t.Error("Expected error for summary exceeding max length")
+		return
+	}
+	if !strings.Contains(err.Error(), "at most 512 characters") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+// ============================================================================
+// ValidateRunMetadata Tests
+
+func TestValidateRunMetadata_Valid(t *testing.T) {
+	validMetadata := []string{
+		"",                                      // Empty is allowed
+		"Key metadata here",                     // Normal metadata
+		strings.Repeat("x", MaxRunMetadataLen),  // Maximum length (1024 chars)
+	}
+
+	for _, m := range validMetadata {
+		if err := ValidateRunMetadata(m); err != nil {
+			t.Errorf("ValidateRunMetadata with len=%d should be valid, got error: %v", len(m), err)
+		}
+	}
+}
+
+func TestValidateRunMetadata_TooLong(t *testing.T) {
+	err := ValidateRunMetadata(strings.Repeat("x", MaxRunMetadataLen+1))
+	if err == nil {
+		t.Error("Expected error for metadata exceeding max length")
+		return
+	}
+	if !strings.Contains(err.Error(), "at most 1024 characters") {
+		t.Errorf("Unexpected error message: %v", err)
+	}
+}
+
+// ============================================================================
+// ValidateTicketID Tests
+
+func TestValidateTicketID_Valid(t *testing.T) {
+	validIDs := []string{
+		"ticket-abc123def456",
+		"ticket-d3aab1ddf88f4b0b",
+		"ticket-774f511b8f",
+	}
+
+	for _, id := range validIDs {
+		if err := ValidateTicketID(id); err != nil {
+			t.Errorf("ValidateTicketID(%q) should be valid, got error: %v", id, err)
+		}
+	}
+}
+
+func TestValidateTicketID_Invalid(t *testing.T) {
+	invalidIDs := []string{
+		"",                     // Empty
+		"ticket",              // Too short (no hex suffix)
+		"board-abc123def456",  // Wrong prefix
+	}
+
+	for _, id := range invalidIDs {
+		err := ValidateTicketID(id)
+		if err == nil {
+			t.Errorf("ValidateTicketID(%q) should have failed, got nil", id)
+		}
+	}
+}
+
+// ============================================================================
+// ValidateGameID Tests
+
+func TestValidateGameID_Valid(t *testing.T) {
+	validIDs := []string{
+		"game-abc123def456",
+		"a1b2c3d4e5f6",
+		"any-nonempty-string",
+	}
+
+	for _, id := range validIDs {
+		if err := ValidateGameID(id); err != nil {
+			t.Errorf("ValidateGameID(%q) should be valid, got error: %v", id, err)
+		}
+	}
+}
+
+func TestValidateGameID_Invalid(t *testing.T) {
+	invalidIDs := []string{
+		"",      // Empty
+		"   ",   // Whitespace only
+	}
+
+	for _, id := range invalidIDs {
+		err := ValidateGameID(id)
+		if err == nil {
+			t.Errorf("ValidateGameID(%q) should have failed, got nil", id)
+		} else if !strings.Contains(err.Error(), "game id is required") {
+			t.Errorf("Unexpected error for %q: %v", id, err)
+		}
+	}
+}

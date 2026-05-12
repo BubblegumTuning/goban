@@ -190,7 +190,7 @@
 			});
 			
 			if (res.ok) {
-				alert(`Ticket "${ticket.title}" has been restored to "To Do"`);
+				alert('Ticket "' + escapeHtml(ticket.title) + '" has been restored to "To Do"');
 				await loadArchive(); // Refresh archive list (removes restored ticket)
 				await loadBoard();  // Refresh board view (shows restored ticket immediately)
 			} else {
@@ -402,19 +402,19 @@
                             <div class="ticket p-5 rounded-2xl cursor-move shadow-md" 
                                  draggable="true"
                                  ondragstart="drag(event)"
-                                 onclick="showTicketDetail('${ticket.id}')"
-                                 data-ticket-id="${ticket.id}"
-                                 data-column-id="${column.id}">
+                                 onclick="showTicketDetail(' + escapeHtml(ticket.id) + ')"
+                                 data-ticket-id="' + escapeHtml(ticket.id) + '"
+                                 data-column-id="' + escapeHtml(column.id) + '">
                                 <div class="mb-2">
                                     <div class="font-medium text-white text-[15px] leading-tight">${escapeHtml(ticket.title)}</div>
-                                    <div class="text-[9px] text-gray-500 font-mono mt-1">${ticket.id}</div>
+                                    <div class="text-[9px] text-gray-500 font-mono mt-1">${escapeHtml(ticket.id)}</div>
                                 </div>
                                 <div class="flex flex-wrap gap-2">
-                                    <span class="inline-block px-3 py-1 text-[10px] font-medium rounded-xl ${ticket.priority === 'critical' ? 'bg-red-900 text-red-200' : ticket.priority === 'high' ? 'bg-orange-900 text-orange-200' : 'bg-blue-900 text-blue-300'}">
-                                        ${(ticket.priority || 'medium')}
+                               <span class="inline-block px-3 py-1 text-[10px] font-medium rounded-xl ${ticket.priority === 'critical' ? 'bg-red-900 text-red-200' : ticket.priority === 'high' ? 'bg-orange-900 text-orange-200' : 'bg-blue-900 text-blue-300'}">
+                                        ${escapeHtml(ticket.priority || 'medium')}
                                     </span>
                                     ${ticket.assignee ? `<span class="inline-block px-3 py-1 text-[10px] bg-gray-700 text-gray-300 rounded-xl">${escapeHtml(ticket.assignee)}</span>` : ''}
-                                    ${ticket.due_date ? `<span class="inline-block px-3 py-1 text-[10px] bg-amber-900 text-amber-200 rounded-xl">📅 ${ticket.due_date}</span>` : ''}
+                                    ${ticket.due_date ? `<span class="inline-block px-3 py-1 text-[10px] bg-amber-900 text-amber-200 rounded-xl">📅 ${escapeHtml(ticket.due_date)}</span>` : ''}
                                 </div>
                                 ${ticket.labels && ticket.labels.length > 0 ? `
                                 <div class="flex flex-wrap gap-1 mt-3">
@@ -778,7 +778,7 @@
                 div.innerHTML = `
                     <div class="flex justify-between text-xs text-gray-500 mb-1">
                         <span>${escapeHtml(comment.who)}</span>
-                        <span>${comment.timestamp || 'just now'}</span>
+                        <span>${escapeHtml(comment.timestamp || 'just now')}</span>
                     </div>
                     <div class="text-gray-300">${escapeHtml(comment.text)}</div>
                 `;

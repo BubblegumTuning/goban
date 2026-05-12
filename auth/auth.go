@@ -13,7 +13,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"goban/config"
 	"goban/models"
 )
 
@@ -80,23 +79,14 @@ func ValidateToken(token string) (*models.AgentToken, error) {
 // ValidateTokenWithRole validates a Bearer token and returns the associated User with role.
 // Returns an error if token is invalid or user lookup fails.
 func ValidateTokenWithRole(token string) (*models.User, error) {
-	if config.Debug {
-		log.Printf("[AUTH.DEBUG] ValidateTokenWithRole called - store is nil: %v", store == nil)
-	}
 	if store == nil {
 		return nil, errors.New("database not initialized")
 	}
 
 	hash := HashToken(token)
-	if config.Debug {
-		log.Printf("[AUTH.DEBUG] Token hash computed — length=%d (no hash values logged)", len(hash))
-	}
 
 	// First validate the token exists
 	if _, err := store.ValidateToken(hash); err != nil {
-		if config.Debug {
-			log.Printf("[AUTH.DEBUG] ValidateToken failed: %v", err)
-		}
 		return nil, err
 	}
 
@@ -108,15 +98,9 @@ func ValidateTokenWithRole(token string) (*models.User, error) {
 	// Look up user by token hash (includes role information)
 	user, err := store.GetUserByToken(hash)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[AUTH.DEBUG] GetUserByToken failed: %v", err)
-		}
 		return nil, fmt.Errorf("user lookup failed: %w", err)
 	}
 
-	if config.Debug {
-		log.Printf("[AUTH.DEBUG] ValidateTokenWithRole SUCCESS - user=%s role=%s", user.Name, user.Role)
-	}
 	return user, nil
 }
 

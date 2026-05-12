@@ -1,11 +1,8 @@
 #!/bin/bash
 # Build Goban binaries with version injection
-# Usage: ./build.sh [remote-host] (optional deploy to remote)
+# Usage: ./build.sh
 
 set -e
-
-REMOTE_HOST="${1:-}"
-DEPLOY_USER="goban"
 
 echo "=== Building Goban ==="
 
@@ -30,32 +27,12 @@ echo "[3/4] Building user CLI..."
 cd goban-user-cli && go build -ldflags="-s -w -X goban/version.Version=${VERSION}" -o ../bin/goban-user-cli . || echo "      ⚠ User CLI skipped"
 cd ..
 
-if [ -z "$REMOTE_HOST" ]; then
-  echo "[4/4] Dev symlink (local only)..."
-  ln -sf ../public bin/public 2>/dev/null || true
-else
-  echo "[4/4] Prod mode - no dev symlink"
-fi
+echo "[4/4] Dev symlink (local only)... "
+ln -sf ../public bin/public 2>/dev/null || true
+
+# Regenerate .fiber.gz companion files for all non-.gz assets in public/ (recursive)
+echo "=== Refreshing compressed assets ==="
+find public/ -type f ! -name '*.gz' | while read -r f; do gzip -n -c "$f" > "${f}.fiber.gz"; done 2>/dev/null || true
 
 echo "=== Build complete ==="
-
-if [ -n "$REMOTE_HOST" ]; then
-  echo "=== Deploying to $REMOTE_HOST ==="
-  ssh ${DEPLOY_USER}@${REMOTE_HOST} "
-    sudo mkdir -p /opt/goban/{bin,config,public/styles,data}
-    sudo rm -f /opt/goban/public/public /opt/goban/public/static 2>/dev/null || true
-  "
-  scp bin/goban ${DEPLOY_USER}@${REMOTE_HOST}:/opt/goban/bin/
-  ssh ${DEPLOY_USER}@${REMOTE_HOST} "sudo chown goban:goban /opt/goban/bin/goban && sudo chmod +x /opt/goban/bin/goban"
-  rsync -avz --delete public/ ${DEPLOY_USER}@${REMOTE_HOST}:/opt/goban/public/
-  ssh ${DEPLOY_USER}@${REMOTE_HOST} "sudo chown -R goban:goban /opt/goban/public && sudo chmod -R 755 /opt/goban/public && sudo systemctl restart goban"
-  echo "=== Verification ==="
-  ssh ${DEPLOY_USER}@${REMOTE_HOST} '
-    curl -I http://localhost:8080/styles/tailwind.min.css
-    curl -s http://localhost:8080/styles/tailwind.min.css | head -c 60
-    echo "CSS verification passed."
-  '
-  echo "=== Deployed ==="
-else
-  echo "Local dev ready. Run ./bin/goban --version to verify."
-fi
+echo "Local dev ready. Run ./bin/goban --version to verify."

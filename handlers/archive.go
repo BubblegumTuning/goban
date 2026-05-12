@@ -78,13 +78,15 @@ func SingleArchive(c *fiber.Ctx) error {
 	// Activity log (A2)
 	prevActive := "active"
 	newArchived := "archived"
-	dbStore.CreateActivityLog(&models.ActivityLog{
+	if _, err := dbStore.CreateActivityLog(&models.ActivityLog{
 		TicketID:  req.TicketID,
 		EventType: models.ActivityArchived,
 		Actor:     username,
 		PrevState: &prevActive,
 		NewState:  &newArchived,
-	})
+	}); err != nil {
+		log.Printf("Warning: Failed to create archive activity log for ticket %s: %v", req.TicketID, err)
+	}
 
 	// SSE event (A3) — emitted after DB commit to avoid broadcasting uncommitted changes
 	sse.Emit("archive", req.TicketID, ticket.BoardID, fiber.Map{"title": ticket.Title})
@@ -153,13 +155,15 @@ func BulkArchive(c *fiber.Ctx) error {
 		newArchived := "archived"
 		for _, ticketID := range existingIDs {
 			ticket := existingTickets[ticketID]
-			dbStore.CreateActivityLog(&models.ActivityLog{
+			if _, err := dbStore.CreateActivityLog(&models.ActivityLog{
 				TicketID:  ticketID,
 				EventType: models.ActivityArchived,
 				Actor:     username,
 				PrevState: &prevActive,
 				NewState:  &newArchived,
-			})
+			}); err != nil {
+				log.Printf("Warning: Failed to create archive activity log for ticket %s: %v", ticketID, err)
+			}
 
 			sse.Emit("archive", ticketID, ticket.BoardID, fiber.Map{"title": ticket.Title})
 		}
@@ -323,13 +327,15 @@ func UnarchiveTicket(c *fiber.Ctx) error {
 	// Activity log (A2)
 	prevArchived := "archived"
 	newRestored := fmt.Sprintf("restored to %s/%s", targetBoardID, targetColumn)
-	dbStore.CreateActivityLog(&models.ActivityLog{
+	if _, err := dbStore.CreateActivityLog(&models.ActivityLog{
 		TicketID:  ticketID,
 		EventType: models.ActivityRestored,
 		Actor:     username,
 		PrevState: &prevArchived,
 		NewState:  &newRestored,
-	})
+	}); err != nil {
+		log.Printf("Warning: Failed to create restore activity log for ticket %s: %v", ticketID, err)
+	}
 
 	// SSE event (A3) — emitted after DB commit
 	sse.Emit("unarchive", ticketID, targetBoardID, fiber.Map{"column": targetColumn})
