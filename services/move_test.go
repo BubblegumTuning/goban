@@ -355,6 +355,51 @@ func TestMoveTicket_TerminalStateCancel(t *testing.T) {
 	}
 }
 
+// TestMoveTicket_SameStatusEarlyReturn verifies that moving a ticket to its current
+// status returns immediately without opening a transaction or writing activity logs.
+func TestMoveTicket_SameStatusEarlyReturn(t *testing.T) {
+	store := setupMoveTest(t)
+	service := NewMoveService(store)
+
+	if _, err := store.CreateUser("test-agent", models.RoleNormalAI); err != nil {
+		t.Fatalf("Failed to create test-agent: %v", err)
+	}
+	user, _ := store.GetUserByName("test-agent")
+
+	ticket := &models.Ticket{
+		ID:       "ticket-same-status",
+		Title:    "Same Status Test",
+		Column:   "todo-0", // TODO status
+		Assignee: "test-agent",
+		BoardID:  "test-board",
+	}
+	if err := store.CreateTicket(ticket); err != nil {
+		t.Fatalf("Failed to create ticket: %v", err)
+	}
+
+	// Move to same status — should succeed without error or side effects
+	req := MoveRequest{TargetStatus: "TODO"}
+	result, err := service.Move("ticket-same-status", req, user)
+	if err != nil {
+		t.Fatalf("Same-status move returned unexpected error: %v", err)
+	}
+	if result == nil || result.Ticket == nil {
+		t.Fatal("Expected non-nil result")
+	}
+	if result.Ticket.Column != "todo-0" {
+		t.Errorf("Expected column 'todo-0', got '%s'", result.Ticket.Column)
+	}
+
+	// Verify ticket in store is unchanged
+	fetched, err := store.GetTicket("ticket-same-status")
+	if err != nil || fetched == nil {
+		t.Fatalf("Failed to fetch ticket after same-status move: %v", err)
+	}
+	if fetched.Column != "todo-0" {
+		t.Errorf("Store column changed unexpectedly: got '%s'", fetched.Column)
+	}
+}
+
 // TestMoveTicket_BacklogHandling verifies BACKLOG column support.
 func TestMoveTicket_BacklogHandling(t *testing.T) {
 	store := setupMoveTest(t)

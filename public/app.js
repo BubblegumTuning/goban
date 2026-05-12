@@ -402,9 +402,9 @@
                             <div class="ticket p-5 rounded-2xl cursor-move shadow-md" 
                                  draggable="true"
                                  ondragstart="drag(event)"
-                                 onclick="showTicketDetail(' + escapeHtml(ticket.id) + ')"
-                                 data-ticket-id="' + escapeHtml(ticket.id) + '"
-                                 data-column-id="' + escapeHtml(column.id) + '">
+                                 onclick="showTicketDetail('${ticket.id}')"
+                                 data-ticket-id="${escapeHtml(ticket.id)}"
+                                 data-column-id="${escapeHtml(column.id)}">
                                 <div class="mb-2">
                                     <div class="font-medium text-white text-[15px] leading-tight">${escapeHtml(ticket.title)}</div>
                                     <div class="text-[9px] text-gray-500 font-mono mt-1">${escapeHtml(ticket.id)}</div>

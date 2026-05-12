@@ -134,6 +134,11 @@ func (s *MoveService) Move(ticketID string, req MoveRequest, user *models.User) 
 
 	currentStatus := ColumnIDToStatus(ticket.Column)
 
+	// Early return if target status matches current — skip transaction, activity log, and SSE.
+	if currentStatus == req.TargetStatus {
+		return &MoveResult{Ticket: ticket}, nil
+	}
+
 	// Permission check
 	canMove := false
 	if user.Role == models.RoleHumanAdmin || user.Role == models.RoleOverseerAI {
