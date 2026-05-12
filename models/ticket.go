@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Column ID mapping - single source of truth. Only backlog/todo/inprogress/review/done/cancelled permitted (per note).
@@ -117,6 +118,7 @@ func (ti *TicketIndex) Remove(ticketID string) {
 }
 
 // GenerateTicketID creates a collision-free ticket ID using crypto/rand.
+// Format: ticket-YYYYMMDD-<80-bit hex hash>.
 // Entropy: 5 bytes (80 bits) → ~3 billion tickets before birthday paradox concerns.
 // Acceptable for current scale; increase to 8 bytes if system grows significantly.
 func GenerateTicketID() string {
@@ -124,11 +126,11 @@ func GenerateTicketID() string {
 	bytes := make([]byte, 5)
 	if _, err := rand.Read(bytes); err != nil {
 		// Fallback to time-based if crypto fails
-		return fmt.Sprintf("ticket-%d", 0)
+		return fmt.Sprintf("ticket-%s-0", time.Now().Format("20060102"))
 	}
 
-	id := fmt.Sprintf("%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4])
-	return fmt.Sprintf("ticket-%s", id)
+	hash := fmt.Sprintf("%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4])
+	return fmt.Sprintf("ticket-%s-%s", time.Now().Format("20060102"), hash)
 }
 
 // ValidateNoDuplicateTickets checks for duplicates across all boards.
