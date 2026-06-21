@@ -324,7 +324,7 @@ func TestHandleDeleteTicket_Success(t *testing.T) {
 	userID := createTestUser(t, s, "test-agent-delete", models.RoleNormalAI)
 	tokenStr := registerTestToken(t, s, userID, "test-agent-delete")
 
-	resp, err := makeRequestWithAuth(app, tokenStr, "DELETE", "/api/tickets/del-1", nil)
+	resp, err := makeRequestWithAuth(app, tokenStr, "DELETE", "/api/tickets/del-1?force=true", nil)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestHandleDeleteTicket_NotFound(t *testing.T) {
 	userID := createTestUser(t, s, "test-agent-delete-not-found", models.RoleNormalAI)
 	tokenStr := registerTestToken(t, s, userID, "test-agent-delete-not-found")
 
-	resp, err := makeRequestWithAuth(app, tokenStr, "DELETE", "/api/tickets/nonexistent-456", nil)
+	resp, err := makeRequestWithAuth(app, tokenStr, "DELETE", "/api/tickets/nonexistent-456?force=true", nil)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
@@ -1777,7 +1777,7 @@ func TestHandleAddComment_Success(t *testing.T) {
 	createTestTicket(t, s, "comment-1", "todo-0")
 	jwtToken, _ := createAdminJWT(t, s, "test-commenter", models.RoleNormalAI)
 
-	reqBody := CommentRequest{Who: "test-commenter", Text: "This is a test comment"}
+	reqBody := CommentRequest{Text: "This is a test comment"}
 	resp, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/comment-1/comments", reqBody)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -1807,7 +1807,7 @@ func TestHandleAddComment_InvalidText(t *testing.T) {
 	createTestTicket(t, s, "comment-2", "todo-0")
 	jwtToken, _ := createAdminJWT(t, s, "test-commenter-invalid", models.RoleNormalAI)
 
-	reqBody := CommentRequest{Who: "test-user", Text: ""}
+	reqBody := CommentRequest{Text: ""}
 	resp, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/comment-2/comments", reqBody)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -1824,7 +1824,7 @@ func TestHandleAddComment_TicketNotFound(t *testing.T) {
 
 	jwtToken, _ := createAdminJWT(t, s, "test-commenter-nf", models.RoleNormalAI)
 
-	reqBody := CommentRequest{Who: "test-user", Text: "Test comment"}
+	reqBody := CommentRequest{Text: "Test comment"}
 	resp, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/nonexistent-ticket/comments", reqBody)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -1843,7 +1843,7 @@ func TestHandleAddComment_CustomTimestamp(t *testing.T) {
 	jwtToken, _ := createAdminJWT(t, s, "test-commenter-ts", models.RoleNormalAI)
 
 	customTimestamp := "2025-06-01T12:00:00Z"
-	reqBody := CommentRequest{Who: "test-user", Text: "Comment with timestamp", Timestamp: customTimestamp}
+	reqBody := CommentRequest{Text: "Comment with timestamp", Timestamp: customTimestamp}
 	resp, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/comment-ts-1/comments", reqBody)
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
@@ -1870,7 +1870,7 @@ func TestHandleDeleteComment_Success(t *testing.T) {
 	jwtToken, _ := createAdminJWT(t, s, "test-del-commenter", models.RoleNormalAI)
 
 	// Add a comment first
-	reqBody := CommentRequest{Who: "test-user", Text: "Comment to delete"}
+	reqBody := CommentRequest{Text: "Comment to delete"}
 	respAdd, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/del-comment-1/comments", reqBody)
 	if err != nil || respAdd.Code != 200 {
 		t.Fatalf("Setup failed to add comment: code=%d err=%v", respAdd.Code, err)
@@ -1957,7 +1957,7 @@ func TestHandleListComments_Success(t *testing.T) {
 
 	// Add two comments
 	for i := 0; i < 2; i++ {
-		reqBody := CommentRequest{Who: fmt.Sprintf("user-%d", i), Text: fmt.Sprintf("Comment %d", i)}
+		reqBody := CommentRequest{Text: fmt.Sprintf("Comment %d", i)}
 		respAdd, err := makeRequestWithAuth(app, jwtToken, "POST", "/api/tickets/list-comment-1/comments", reqBody)
 		if err != nil || respAdd.Code != 200 {
 			t.Fatalf("Setup failed to add comment %d: code=%d err=%v", i, respAdd.Code, err)

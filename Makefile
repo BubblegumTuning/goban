@@ -63,8 +63,12 @@ $(RELEASE_DIR)/public: | build
 	@echo "[COPY] Frontend assets"
 	cp -r public/ $(RELEASE_DIR)/public/ 2>/dev/null || true
 
+$(RELEASE_DIR)/deploy: | build
+	@echo "[COPY] Deploy scripts"
+	cp -r deploy/ $(RELEASE_DIR)/deploy/ 2>/dev/null || true
+
 # Generate .fiber.gz companion files for all non-.gz assets in public/
-$(RELEASE_DIR)/.fiber-gz: $(RELEASE_DIR)/bin/goban $(RELEASE_DIR)/public
+$(RELEASE_DIR)/.fiber-gz: $(RELEASE_DIR)/bin/goban $(RELEASE_DIR)/public $(RELEASE_DIR)/deploy
 	@echo "[COMPRESS] Generating .fiber.gz files"
 	find $(RELEASE_DIR)/public -type f ! -name '*.gz' | while read -r f; do \
 		gzip -n -c "$$f" > "$${f}.fiber.gz"; \
@@ -76,11 +80,11 @@ $(RELEASE_DIR)/.fiber-gz: $(RELEASE_DIR)/bin/goban $(RELEASE_DIR)/public
 # ---------------------------------------------------------------------------
 
 tarball: $(RELEASE_DIR)/.fiber-gz
-	@echo "[TARBALL] Creating $(TARBALL_NAME)"
-	tar -czf $(TARBALL_NAME) \
+	@echo "[TARBALL] Creating $(RELEASE_DIR)/$(TARBALL_NAME)"
+	tar -czf $(RELEASE_DIR)/$(TARBALL_NAME) \
 		-C $(RELEASE_DIR) \
-		bin/ public/
-	@ls -lh $(TARBALL_NAME)
+		bin/ public/ deploy/
+	@ls -lh $(RELEASE_DIR)/$(TARBALL_NAME)
 
 release: tarball
 

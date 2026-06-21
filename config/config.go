@@ -33,6 +33,8 @@ type Config struct {
 	JWTValidity       time.Duration `toml:"jwt_validity"`       // JWT token validity period (e.g. "30d", "72h")
 	RefreshGracePeriod time.Duration `toml:"refresh_grace_period"` // Window to refresh expired tokens without re-auth
 	CorsOrigins string  `toml:"cors_origins"` // Comma-separated allowed CORS origins (empty = same-origin only)
+	MCPEnabled   bool   `toml:"mcp_enabled"`
+	MCPTransport string `toml:"mcp_transport"` // "stdio" (default) or "http"
 	Version     string  `toml:"version"`      // Default or from build tag
 	Boards      []Board `toml:"boards"`
 }
@@ -85,6 +87,8 @@ func LoadConfig(path string) Config {
 		JWTSecret:  "", // MUST be set via config file or GOBAN_JWT_SECRET env var
 		JWTValidity:       30 * 24 * time.Hour, // Default token validity: 30 days
 		RefreshGracePeriod: 90 * 24 * time.Hour, // Refresh window: 90 days
+		MCPEnabled:   true,
+		MCPTransport: "stdio",
 	}
 
 	// Step 2: Load from TOML file if it exists (overrides defaults)
@@ -136,6 +140,12 @@ func LoadConfig(path string) Config {
 		if parsedCfg.CorsOrigins != "" {
 			cfg.CorsOrigins = parsedCfg.CorsOrigins
 		}
+		if parsedCfg.MCPEnabled {
+			cfg.MCPEnabled = parsedCfg.MCPEnabled
+		}
+		if parsedCfg.MCPTransport != "" {
+			cfg.MCPTransport = parsedCfg.MCPTransport
+		}
 			if parsedCfg.Debug {
 				cfg.Debug = parsedCfg.Debug
 			}
@@ -155,9 +165,6 @@ func LoadConfig(path string) Config {
 		log.Printf("[ERROR] Config validation failed: %v", err)
 	}
 
-	if Debug {
-		log.Printf("[DEBUG] Final config - Port:%s DBType:%s DBHost:%s DBName:%s", cfg.Port, cfg.DBType, cfg.DBHost, cfg.DBName)
-	}
 
 	// Step 5: Default board configuration matching production
 	if len(cfg.Boards) == 0 {
@@ -225,9 +232,6 @@ func parseTOML(content string) Config {
 		return Config{}
 	}
 
-	if Debug {
-		log.Printf("[DEBUG] Parsed TOML config - DBType:%s Port:%s", cfg.DBType, cfg.Port)
-	}
 	return cfg
 }
 

@@ -7,19 +7,25 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"goban/auth"
 	"goban/models"
 	"goban/sse"
 	"goban/validation"
 )
 
 type CommentRequest struct {
-	Who       string `json:"who"`
 	Text      string `json:"text"`
 	Timestamp string `json:"timestamp,omitempty"`
 }
 
 func handleAddComment(c *fiber.Ctx) error {
 	ticketID := c.Params("ticketId")
+
+	// Tie comment identity to authenticated user — prevent spoofing.
+	user, ok := c.Locals("user").(*models.User)
+	if !ok || user == nil {
+		return auth.SendAuthError(c, "User not authenticated")
+	}
 
 	var req CommentRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -46,7 +52,7 @@ func handleAddComment(c *fiber.Ctx) error {
 					commentID := fmt.Sprintf("comment-%s-%d", ticketID[len(ticketID)-8:], len(t.Comments))
 					comment := models.Comment{
 						ID:        commentID,
-						Who:       req.Who,
+						Who:       user.Name,
 						Text:      req.Text,
 						Timestamp: timestamp,
 					}
@@ -59,7 +65,7 @@ func handleAddComment(c *fiber.Ctx) error {
 						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save comment: %v", err)})
 					}
 
-					log.Printf("Added comment to ticket %s by %s", ticketID, req.Who)
+					log.Printf("Added comment to ticket %s by %s (authenticated)", ticketID, user.Name)
 
 					sse.Emit("comment_add", ticketID, boardID, fiber.Map{
 						"ticket_id": ticketID,

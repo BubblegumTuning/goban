@@ -8,7 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"goban/auth"
-	"goban/config"
+	"goban/middleware"
 	"goban/models"
 	"goban/services"
 	"goban/sse"
@@ -20,9 +20,6 @@ var moveService *services.MoveService
 // InitMoveService initializes the move service with the store.
 func InitMoveService(ticketStore store.TicketStore) {
 	moveService = services.NewMoveService(ticketStore)
-	if config.Debug {
-		log.Println("DEBUG: MoveService initialized")
-	}
 }
 
 // MoveRequestV1 is for POST /api/v1/tickets/:id/move.
@@ -136,8 +133,7 @@ func HandleMoveV1(c *fiber.Ctx) error {
 
 // RegisterMoveRoutesV1 registers move-related routes.
 func RegisterMoveRoutesV1(app *fiber.App) {
-	app.Post("/api/v1/tickets/:id/move", AuthMiddlewareWithRole, HandleMoveV1)
-	if config.Debug {
-		log.Println("DEBUG: Registered POST /api/v1/tickets/:id/move")
-	}
+	moveGroup := app.Group("/api/v1/tickets/:id")
+	moveGroup.Use(middleware.ModerateLimiter())
+	moveGroup.Post("/move", AuthMiddlewareWithRole, HandleMoveV1)
 }

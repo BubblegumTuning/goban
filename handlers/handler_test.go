@@ -333,7 +333,7 @@ func TestDeleteTicket_Success(t *testing.T) {
 	json.NewDecoder(respCreate.Body).Decode(&created)
 	ticketID := created["id"].(string)
 
-	req := httptest.NewRequest("DELETE", "/api/tickets/"+ticketID, nil)
+	req := httptest.NewRequest("DELETE", "/api/tickets/"+ticketID+"?force=true", nil)
 	req.Header.Set("Authorization", "Bearer "+s.adminToken)
 	resp, _ := s.app.Test(req)
 	if resp.StatusCode != 200 {
@@ -349,7 +349,7 @@ func TestDeleteTicket_Success(t *testing.T) {
 func TestDeleteTicket_NotFound(t *testing.T) {
 	s := newHandlerSuite(t)
 
-	req := httptest.NewRequest("DELETE", "/api/tickets/nonexistent", nil)
+	req := httptest.NewRequest("DELETE", "/api/tickets/nonexistent?force=true", nil)
 	req.Header.Set("Authorization", "Bearer "+s.adminToken)
 	resp, _ := s.app.Test(req)
 	if resp.StatusCode != 404 {

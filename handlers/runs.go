@@ -8,7 +8,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
-	"goban/config"
 	"goban/models"
 	"goban/sse"
 	"goban/validation"
@@ -176,7 +175,4 @@ func RegisterRunRoutes(app *fiber.App) {
 	runGroup.Get("/active", handleGetActiveRun)
 	runGroup.Patch("", handleUpdateRun)
 
-	if config.Debug {
-		log.Println("DEBUG: Registered ticket run routes /api/v1/tickets/:ticketId/runs")
-	}
 }

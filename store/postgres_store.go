@@ -1295,11 +1295,6 @@ func (s *PostgresStore) GetUserByID(id int64) (*models.User, error) {
 	return &u, nil
 }
 
-// GetUser retrieves a user by ID (alias for backward compatibility).
-func (s *PostgresStore) GetUser(id int64) (*models.User, error) {
-	return s.GetUserByID(id)
-}
-
 // GetUserByName retrieves a user by name.
 func (s *PostgresStore) GetUserByName(name string) (*models.User, error) {
 	row := s.db.QueryRow(`
@@ -1418,9 +1413,6 @@ func (s *PostgresStore) GetTicketsByColumnAndAssignee(columnPrefix, assignee str
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Query error: %v", err)
-		}
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
@@ -1468,9 +1460,6 @@ func (s *PostgresStore) GetTicketsWithFilter(allowedColumns []string, p Paginati
 	countQuery := "SELECT COUNT(*) FROM tickets" + whereClause
 	err := s.db.QueryRow(countQuery, args...).Scan(&totalCount)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Count query error: %v", err)
-		}
 		return nil, 0, fmt.Errorf("count query failed: %w", err)
 	}
 
@@ -1482,9 +1471,6 @@ func (s *PostgresStore) GetTicketsWithFilter(allowedColumns []string, p Paginati
 	args = append(args, limit, offset)
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Query error: %v", err)
-		}
 		return nil, totalCount, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()

@@ -9,7 +9,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"goban/auth"
-	"goban/config"
 	"goban/models"
 	"goban/services"
 	"goban/validation"
@@ -77,9 +76,6 @@ func AuthMiddlewareAdmin(c *fiber.Ctx) error {
 
 	user, err := auth.ValidateTokenWithRole(token)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[ADMIN.DEBUG] Auth error: %v", err)
-		}
 		return auth.SendAuthError(c, fmt.Sprintf("authentication failed: %v", err))
 	}
 
@@ -357,7 +353,4 @@ func RegisterAdminRoutes(app *fiber.App) {
 	adminGroup.Delete("/users/:id", HandleAdminDeleteUser)                     // Delete user (+ cascade tokens)
 	adminGroup.Post("/users/:id/token-regenerate", HandleAdminRegenerateToken) // Force new token
 
-	if config.Debug {
-		log.Println("DEBUG: Registered admin routes under /api/admin/")
-	}
 }

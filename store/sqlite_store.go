@@ -525,13 +525,7 @@ func (s *SQLiteStore) GetPaginatedTickets(p Pagination) ([]*models.Ticket, int64
 	var totalCount int64
 	err := s.db.QueryRow("SELECT COUNT(*) FROM tickets WHERE archived = 0").Scan(&totalCount)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Count query error: %v", err)
-		}
 		return nil, 0, fmt.Errorf("count query failed: %w", err)
-	}
-	if config.Debug {
-		log.Printf("[STORE.DEBUG] GetPaginatedTickets: totalCount=%d, limit=%d, offset=%d", totalCount, limit, offset)
 	}
 
 	rows, err := s.db.Query(`
@@ -543,9 +537,6 @@ func (s *SQLiteStore) GetPaginatedTickets(p Pagination) ([]*models.Ticket, int64
 		LIMIT ? OFFSET ?
 	`, limit, offset)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Query error: %v", err)
-		}
 		return nil, totalCount, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
@@ -569,9 +560,6 @@ func (s *SQLiteStore) GetTicket(id string) (*models.Ticket, error) {
 
 	tickets, err := s.scanTicketsSingle(row)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[DEBUG] GetTicket(%s) scan error: %v", id, err)
-		}
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, sql.ErrNoRows
 		}
@@ -579,9 +567,6 @@ func (s *SQLiteStore) GetTicket(id string) (*models.Ticket, error) {
 	}
 
 	if len(tickets) == 0 {
-		if config.Debug {
-			log.Printf("[DEBUG] GetTicket(%s) returned empty slice", id)
-		}
 		return nil, sql.ErrNoRows
 	}
 
@@ -1364,9 +1349,6 @@ func (s *SQLiteStore) GetTicketsByColumnAndAssignee(columnPrefix, assignee strin
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Query error: %v", err)
-		}
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
@@ -1411,9 +1393,6 @@ func (s *SQLiteStore) GetTicketsWithFilter(allowedColumns []string, p Pagination
 	countQuery := "SELECT COUNT(*) FROM tickets" + whereClause
 	err := s.db.QueryRow(countQuery, args...).Scan(&totalCount)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Count query error: %v", err)
-		}
 		return nil, 0, fmt.Errorf("count query failed: %w", err)
 	}
 
@@ -1426,9 +1405,6 @@ func (s *SQLiteStore) GetTicketsWithFilter(allowedColumns []string, p Pagination
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.Query(query, queryArgs...)
 	if err != nil {
-		if config.Debug {
-			log.Printf("[STORE.DEBUG] Query error: %v", err)
-		}
 		return nil, totalCount, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()

@@ -56,9 +56,6 @@ func RegisterRoutes(app *fiber.App, db PaginatedStore, boards []config.Board) {
 	// Initialize claim service with the store (uses store.TicketStore which includes BeginTx)
 	if ticketStore != nil {
 		claimService = services.NewClaimService(ticketStore)
-		if config.Debug {
-			log.Printf("DEBUG: ClaimService initialized successfully")
-		}
 	}
 
 	// Initialize move service with the store

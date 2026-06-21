@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/gofiber/fiber/v2"
-	"goban/config"
 	"goban/validation"
 )
 
@@ -127,7 +126,4 @@ func RegisterLinkRoutes(app *fiber.App) {
 	linkGroup.Post("", handleAddLink)
 	linkGroup.Delete("?parent=:parentID", handleRemoveLink)
 
-	if config.Debug {
-		log.Println("DEBUG: Registered task link routes /api/v1/tickets/:id/links")
-	}
 }

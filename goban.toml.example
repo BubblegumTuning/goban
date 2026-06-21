@@ -30,3 +30,7 @@ id = "ai-to-human"
 title = "AI → Human"
 desc = "Track tasks assigned from AI agents to human users"
 columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]
+
+# MCP server (enabled by default)
+mcp_enabled = true
+mcp_transport = "stdio"

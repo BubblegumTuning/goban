@@ -2,8 +2,6 @@
 package main
 
 import (
-	"log"
-
 	"github.com/gofiber/fiber/v2"
 	"goban/config"
 )
@@ -11,11 +9,6 @@ import (
 // DebugLogger creates a debug middleware that logs requests when enabled
 func DebugLogger(logFilter *config.LogFilter) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		if logFilter.ShouldLog("debug") {
-			if config.Debug {
-				log.Printf("DEBUG REQUEST: %s %s", c.Method(), c.Path())
-			}
-		}
 		return c.Next()
 	}
 }

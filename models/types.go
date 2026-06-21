@@ -8,12 +8,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// SSEConfig holds SSE-related configuration.
-type SSEConfig struct {
-	BufferSize int `yaml:"buffer_size"`
-	Retention  int `yaml:"retention_days"`
-}
-
 // Board defines a Kanban board configuration.
 type Board struct {
 	ID      string   `json:"id" yaml:"id"`

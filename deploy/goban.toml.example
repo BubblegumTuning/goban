@@ -1,0 +1,43 @@
+# Goban Configuration File
+# Copy this to /opt/goban/config/goban.toml and customize.
+
+# HTTP port the server listens on
+port = "8080"
+
+# Log level: debug, info, warn, error
+log_level = "info"
+
+# --- Database ---
+# Set db_type = "postgres" for PostgreSQL or "sqlite" for SQLite.
+
+db_type = "postgres"
+db_host = "localhost"
+db_port = 5432
+db_user = "goban"
+db_password = "CHANGE_ME"
+db_name = "goban"
+
+# For SQLite, use instead:
+# db_type = "sqlite"
+# db_path = "/opt/goban/data/goban.db"
+
+# Path to frontend assets directory
+static_path = "/opt/goban/public"
+
+# JWT secret — generate with: openssl rand -base64 32
+jwt_secret = "CHANGE_ME"
+
+# --- Boards ---
+# Add or remove [[boards]] blocks as needed.
+
+[[boards]]
+id = "human-to-ai"
+title = "Human -> AI"
+desc = "Track tasks assigned from human users to AI agents"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]
+
+[[boards]]
+id = "ai-to-human"
+title = "AI -> Human"
+desc = "Track tasks assigned from AI agents to human users"
+columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]

@@ -188,3 +188,8 @@ sudo systemctl enable goban
 2. `static_path` in config file
 3. Fallback: `/opt/goban/public`
 4. Dev fallback: `<binary-dir>/public`
+
+## MCP Server
+
+Set `mcp_enabled = true` (default) and `mcp_transport` in goban.toml. Stdio recommended for local agents.
+

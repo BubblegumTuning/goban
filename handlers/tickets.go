@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"goban/config"
 	"goban/models"
 	"goban/sse"
 	"goban/store"
@@ -26,6 +25,15 @@ func normalizePriority(priority string) string {
 
 func handleDeleteTicket(c *fiber.Ctx) error {
 	id := c.Params("id")
+
+	// Require force=true query parameter as a safety guard against accidental deletions.
+	force := c.Query("force", "false")
+	if force != "true" && force != "1" && force != "yes" {
+		return c.Status(400).JSON(fiber.Map{
+			"error":   "confirmation_required",
+			"message": "Deletion requires ?force=true as a safety confirmation.",
+		})
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -149,13 +157,7 @@ func handleUpdateTicket(c *fiber.Ctx) error {
 					}
 					if req.Labels != nil {
 						t.Labels = *req.Labels
-						if config.Debug {
-							log.Printf("DEBUG: Setting labels to %v for ticket %s", t.Labels, id)
-						}
 					} else {
-						if config.Debug {
-							log.Printf("DEBUG: Labels field is nil in request")
-						}
 					}
 		t.UpdatedAt = time.Now().Format(time.RFC3339)
 
@@ -199,6 +201,7 @@ type CreateRequestSimple struct {
 	Labels         []string `json:"labels,omitempty"`
 	BoardID        string   `json:"board_id"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty"`
+	Column         string   `json:"column,omitempty"` // Target column (e.g., "backlog", "todo", "inprogress")
 }
 
 // handleCreateTicketSimple is the production-compatible endpoint that takes board_id in body
@@ -248,6 +251,12 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 		idempKey = c.Query("key")
 	}
 
+	// Default to "todo" if no column specified; resolve to canonical ID via GetColumnID.
+	column := req.Column
+	if column == "" {
+		column = "todo"
+	}
+
 	newTicket := &models.Ticket{
 		ID:             models.GenerateTicketID(),
 		Title:          req.Title,
@@ -256,11 +265,13 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 		Assignee:       req.Assignee,
 		Labels:         req.Labels,
 		BoardID:        boardID,
-		Column:         "todo-0", // Use canonical -0 suffix format for consistency
 		IdempotencyKey: idempKey,
 		CreatedAt:      time.Now().Format(time.RFC3339),
 		UpdatedAt:      time.Now().Format(time.RFC3339),
 	}
+
+	// Resolve the column to its canonical ID and assign it
+	newTicket.Column = models.GetColumnID(column)
 
 	// Set DueDate only if provided (needs pointer conversion)
 	if req.DueDate != "" {
@@ -351,15 +362,9 @@ func handleListTicketsPaginated(ticketStore PaginatedStore) func(c *fiber.Ctx) e
 		var limit, offset int
 		if l, err := strconv.Atoi(limitStr); err == nil {
 			limit = l
-		} else if config.Debug {
-			log.Printf("[TICKETS.DEBUG] Invalid limit param %q: %v — using default 50", limitStr, err)
-		}
-		if o, err := strconv.Atoi(offsetStr); err == nil {
+		} else 		if o, err := strconv.Atoi(offsetStr); err == nil {
 			offset = o
-		} else if config.Debug {
-			log.Printf("[TICKETS.DEBUG] Invalid offset param %q: %v — using default 0", offsetStr, err)
-		}
-
+		} else 
 		if limit <= 0 {
 			limit = 50
 		}
@@ -437,9 +442,6 @@ func HandleGetTicket(c *fiber.Ctx) error {
 
 // RegisterTicketRoutes sets up all ticket-related API routes.
 func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
-	if config.Debug {
-		log.Println("DEBUG: Registering ticket routes")
-	}
 
 	// Public read endpoints — no auth required.
 	publicTickets := app.Group("/api/tickets")
@@ -464,20 +466,11 @@ func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
 	publicTickets.Get("/:id/runs/active", handleGetActiveRun)
 	ticketGroup.Put("/:id/runs", handleUpdateRun)
 
-	if config.Debug {
-		log.Println("DEBUG: Registered ticket CRUD routes [split read/write]")
-	}
 
 	// Public v1 read endpoints — no auth required.
 	app.Get("/api/v1/tickets", handleListTicketsPaginated(store))
-	if config.Debug {
-		log.Println("DEBUG: Registered GET /api/v1/tickets (public)")
-	}
 
 	// Get single ticket by ID (v1 API - public read)
 	app.Get("/api/v1/tickets/:id", HandleGetTicket)
-	if config.Debug {
-		log.Println("DEBUG: Registered GET /api/v1/tickets/:id (public)")
-	}
 
 	}

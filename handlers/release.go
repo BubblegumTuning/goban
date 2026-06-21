@@ -7,7 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"goban/auth"
-	"goban/config"
+	"goban/middleware"
 	"goban/models"
 	"goban/services"
 	"goban/sse"
@@ -19,9 +19,6 @@ var releaseService *services.ReleaseService
 // InitReleaseService initializes the release service with the store.
 func InitReleaseService(ticketStore store.TicketStore) {
 	releaseService = services.NewReleaseService(ticketStore)
-	if config.Debug {
-		log.Println("DEBUG: ReleaseService initialized")
-	}
 }
 
 // HandleRelease handles POST /api/v1/tickets/:id/release
@@ -89,8 +86,7 @@ func HandleRelease(c *fiber.Ctx) error {
 
 // RegisterReleaseRoutes registers release-related routes.
 func RegisterReleaseRoutes(app *fiber.App) {
-	app.Post("/api/v1/tickets/:id/release", AuthMiddlewareWithRole, HandleRelease)
-	if config.Debug {
-		log.Println("DEBUG: Registered POST /api/v1/tickets/:id/release")
-	}
+	releaseGroup := app.Group("/api/v1/tickets/:id")
+	releaseGroup.Use(middleware.ModerateLimiter())
+	releaseGroup.Post("/release", AuthMiddlewareWithRole, HandleRelease)
 }

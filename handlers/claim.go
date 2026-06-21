@@ -8,7 +8,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"goban/auth"
-	"goban/config"
 	"goban/middleware"
 	"goban/models"
 	"goban/services"
@@ -131,7 +130,4 @@ func RegisterClaimRoutes(app *fiber.App) {
 	claimGroup := app.Group("/api/v1/tickets/:id")
 	claimGroup.Use(middleware.ModerateLimiter())
 	claimGroup.Post("/claim", AuthMiddlewareWithRole, HandleClaim)
-	if config.Debug {
-		log.Println("DEBUG: Registered POST /api/v1/tickets/:id/claim with rate limiting")
-	}
 }

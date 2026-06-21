@@ -6,7 +6,6 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"goban/auth"
-	"goban/config"
 	"goban/middleware"
 	"goban/models"
 	"goban/services"
@@ -90,8 +89,5 @@ func HandleRegister(c *fiber.Ctx) error {
 // RegisterRegistrationRoutes sets up the registration endpoint.
 // This endpoint does NOT require authentication as it's the bootstrap mechanism for new agents.
 func RegisterRegistrationRoutes(app *fiber.App) {
-	if config.Debug {
-		log.Printf("DEBUG: Registered POST /api/v1/register with rate limiting")
-	}
 	app.Post("/api/v1/register", middleware.ModerateLimiter(), HandleRegister)
 }

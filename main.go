@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"goban/auth"
 	"goban/config"
+	"goban/mcp"
 	"goban/handlers"
 	"goban/middleware"
 	"goban/store"
@@ -63,6 +64,12 @@ func main() {
 	// Load config
 	cfg := config.LoadConfig(getConfigPath())
 	config.Debug = cfg.Debug // Gate debug logging globally
+	if cfg.MCPEnabled {
+		if err := mcp.Start(cfg); err != nil {
+			log.Fatalf("MCP server failed: %v", err)
+		}
+		return
+	}
 
 	// Get absolute path to static directory from config or env
 	publicPath = os.Getenv("GOBAN_STATIC_PATH")
@@ -151,9 +158,6 @@ func main() {
 	// Uses GET method only (not All) since we only need to handle browser navigation requests.
 	app.Get("/*", func(c *fiber.Ctx) error {
 		path := c.Path()
-		if logFilter.ShouldLog("debug") {
-			log.Printf("DEBUG: SPA catch-all called for %s %s", c.Method(), path)
-		}
 		// Skip API endpoints, static assets, and special paths - return 404 to let other handlers take over
 		if strings.HasPrefix(path, "/api/") ||
 			strings.HasPrefix(path, "/styles/") ||

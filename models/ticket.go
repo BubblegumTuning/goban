@@ -11,7 +11,6 @@ package models
 import (
 	"crypto/rand"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -55,68 +54,6 @@ func GetColumnID(title string) string {
 	return fmt.Sprintf("%s-0", title)
 }
 
-// TicketIndex is a thread-safe O(1) lookup index for tickets.
-type TicketIndex struct {
-	mu    sync.RWMutex
-	index map[string]*TicketLocation // ticketID -> location
-}
-
-// NewTicketIndex creates and initializes a new ticket index.
-func NewTicketIndex() *TicketIndex {
-	return &TicketIndex{
-		index: make(map[string]*TicketLocation),
-	}
-}
-
-// Rebuild rebuilds the entire index from board states.
-func (ti *TicketIndex) Rebuild(boardStates map[string]*BoardState) {
-	ti.mu.Lock()
-	defer ti.mu.Unlock()
-
-	ti.index = make(map[string]*TicketLocation)
-
-	for boardID, board := range boardStates {
-		for _, col := range board.Columns {
-			for _, ticket := range col.Tickets {
-				ti.index[ticket.ID] = &TicketLocation{
-					Ticket:   ticket,
-					BoardID:  boardID,
-					ColumnID: col.ID,
-				}
-			}
-		}
-	}
-}
-
-// Find looks up a ticket by ID and returns its location.
-func (ti *TicketIndex) Find(ticketID string) (*TicketLocation, bool) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	loc, exists := ti.index[ticketID]
-	return loc, exists
-}
-
-// Update updates or inserts a ticket in the index.
-func (ti *TicketIndex) Update(ticketID, boardID, columnID string, ticket *Ticket) {
-	ti.mu.Lock()
-	defer ti.mu.Unlock()
-
-	ti.index[ticketID] = &TicketLocation{
-		Ticket:   ticket,
-		BoardID:  boardID,
-		ColumnID: columnID,
-	}
-}
-
-// Remove removes a ticket from the index.
-func (ti *TicketIndex) Remove(ticketID string) {
-	ti.mu.Lock()
-	defer ti.mu.Unlock()
-
-	delete(ti.index, ticketID)
-}
-
 // GenerateTicketID creates a collision-free ticket ID using crypto/rand.
 // Format: ticket-YYYYMMDD-<80-bit hex hash>.
 // Entropy: 5 bytes (80 bits) → ~3 billion tickets before birthday paradox concerns.
@@ -131,22 +68,4 @@ func GenerateTicketID() string {
 
 	hash := fmt.Sprintf("%02x%02x%02x%02x%02x", bytes[0], bytes[1], bytes[2], bytes[3], bytes[4])
 	return fmt.Sprintf("ticket-%s-%s", time.Now().Format("20060102"), hash)
-}
-
-// ValidateNoDuplicateTickets checks for duplicates across all boards.
-func ValidateNoDuplicateTickets(boardStates map[string]*BoardState) bool {
-	seen := make(map[string]bool)
-
-	for _, board := range boardStates {
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if seen[t.ID] {
-					return false // Duplicate found
-				}
-				seen[t.ID] = true
-			}
-		}
-	}
-
-	return true
 }
