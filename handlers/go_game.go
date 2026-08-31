@@ -140,8 +140,8 @@ func getGame(c *fiber.Ctx) error {
 
 // playMoveRequest represents the request body for playing a stone.
 type playMoveRequest struct {
-	Row    int `json:"row"`
-	Col    int `json:"col"`
+	Row    int    `json:"row"`
+	Col    int    `json:"col"`
 	Player string `json:"player"` // "black" or "white"
 }
 
@@ -365,9 +365,9 @@ func resignGame(c *fiber.Ctx) error {
 		opponent = "black"
 	}
 	emitGameEvent("go_resign", id, fiber.Map{
-		"resigned":  player,
-		"winner":    opponent,
-		"status":    game.Status,
+		"resigned": player,
+		"winner":   opponent,
+		"status":   game.Status,
 	})
 
 	return c.JSON(fiber.Map{

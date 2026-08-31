@@ -1,5 +1,5 @@
 # Goban CLI Configuration File
-# Copy this to ~/.goban-cli/config.yaml or ./config.yaml
+# Copy this to ~/.goban/goban-cli/config.yaml (legacy: ~/.goban/config.yaml or ./config.yaml)
 # All values are optional - sensible defaults are provided
 
 # API server configuration
@@ -38,11 +38,11 @@ retry:
 #   GOBAN_API_TOKEN       -> api.api_token  
 #   GOBAN_BOARD           -> Default board ID for commands
 #   GOBAN_USER            -> Your username for claiming tickets
-#   GOBAN_OUTPUT_FORMAT   -> output.format ('line' or 'json')
+#   GOBAN_OUTPUT_FORMAT   -> output.format ('line', 'json', or 'compact')
 
 # Command Line Flag Overrides (highest priority)
 # Most commands support these flags to override config/env vars:
 #   --server <url>        Override API server URL
 #   --board <id>          Override default board ID
 #   --user <name>         Override username for claiming
-#   --format <line|json>  Override output format
+#   --format <line|json|compact>  Override output format

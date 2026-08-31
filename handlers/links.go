@@ -125,5 +125,4 @@ func RegisterLinkRoutes(app *fiber.App) {
 	linkGroup.Get("", handleGetLinks)
 	linkGroup.Post("", handleAddLink)
 	linkGroup.Delete("?parent=:parentID", handleRemoveLink)
-
 }

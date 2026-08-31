@@ -39,46 +39,45 @@ func handleAddComment(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					timestamp := req.Timestamp
-					if timestamp == "" {
-						timestamp = time.Now().Format(time.RFC3339)
-					}
-
-					commentID := fmt.Sprintf("comment-%s-%d", ticketID[len(ticketID)-8:], len(t.Comments))
-					comment := models.Comment{
-						ID:        commentID,
-						Who:       user.Name,
-						Text:      req.Text,
-						Timestamp: timestamp,
-					}
-
-					t.Comments = append(t.Comments, comment)
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist comment on ticket %s: %v", ticketID, err)
-						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save comment: %v", err)})
-					}
-
-					log.Printf("Added comment to ticket %s by %s (authenticated)", ticketID, user.Name)
-
-					sse.Emit("comment_add", ticketID, boardID, fiber.Map{
-						"ticket_id": ticketID,
-						"comment":   comment,
-					})
-
-					return c.JSON(fiber.Map{"status": "added", "comment": comment})
-				}
-			}
-		}
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	timestamp := req.Timestamp
+	if timestamp == "" {
+		timestamp = time.Now().Format(time.RFC3339)
+	}
+
+	suffix := ticketID
+	if len(suffix) > 8 {
+		suffix = ticketID[len(ticketID)-8:]
+	}
+	commentID := fmt.Sprintf("comment-%s-%d", suffix, len(t.Comments))
+	comment := models.Comment{
+		ID:        commentID,
+		Who:       user.Name,
+		Text:      req.Text,
+		Timestamp: timestamp,
+	}
+
+	t.Comments = append(t.Comments, comment)
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist comment on ticket %s: %v", ticketID, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save comment: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Added comment to ticket %s by %s (authenticated)", ticketID, user.Name)
+
+	sse.Emit("comment_add", ticketID, t.BoardID, fiber.Map{
+		"ticket_id": ticketID,
+		"comment":   comment,
+	})
+
+	return c.JSON(fiber.Map{"status": "added", "comment": comment})
 }
 
 func handleDeleteComment(c *fiber.Ctx) error {
@@ -92,37 +91,32 @@ func handleDeleteComment(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					if commentIndex >= len(t.Comments) {
-						return c.Status(404).JSON(fiber.Map{"error": "Comment not found"})
-					}
-
-					t.Comments = append(t.Comments[:commentIndex], t.Comments[commentIndex+1:]...)
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist comment deletion on ticket %s: %v", ticketID, err)
-						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to delete comment: %v", err)})
-					}
-
-					log.Printf("Deleted comment %d from ticket %s", commentIndex, ticketID)
-
-					sse.Emit("comment_delete", ticketID, boardID, fiber.Map{
-						"ticket_id":     ticketID,
-						"comment_index": commentIndex,
-					})
-
-					return c.JSON(fiber.Map{"status": "deleted"})
-				}
-			}
-		}
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	if commentIndex >= len(t.Comments) {
+		return c.Status(404).JSON(fiber.Map{"error": "Comment not found"})
+	}
+
+	t.Comments = append(t.Comments[:commentIndex], t.Comments[commentIndex+1:]...)
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist comment deletion on ticket %s: %v", ticketID, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to delete comment: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Deleted comment %d from ticket %s", commentIndex, ticketID)
+
+	sse.Emit("comment_delete", ticketID, t.BoardID, fiber.Map{
+		"ticket_id":     ticketID,
+		"comment_index": commentIndex,
+	})
+
+	return c.JSON(fiber.Map{"status": "deleted"})
 }
 
 // RegisterCommentRoutes registers all comment-related endpoints.
@@ -138,22 +132,36 @@ func RegisterCommentRoutes(app *fiber.App) {
 func handleListComments(c *fiber.Ctx) error {
 	ticketID := c.Params("ticketId")
 
-	mu.RLock()
-	defer mu.RUnlock()
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	}
 
+	if len(t.Comments) == 0 {
+		return c.JSON(fiber.Map{"comments": []models.Comment{}})
+	}
+	return c.JSON(fiber.Map{"comments": t.Comments})
+}
+
+func loadTicketFromDB(id string) (*models.Ticket, error) {
+	if dbStore == nil {
+		return nil, fmt.Errorf("store not initialized")
+	}
+	return dbStore.GetTicket(id)
+}
+
+func replaceTicketInCache(ticket *models.Ticket) {
+	if ticket == nil {
+		return
+	}
 	for _, board := range boardStates {
 		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					// Return comments as a list, or empty array if none
-					if len(t.Comments) == 0 {
-						return c.JSON(fiber.Map{"comments": []models.Comment{}})
-					}
-					return c.JSON(fiber.Map{"comments": t.Comments})
+			for i, cached := range col.Tickets {
+				if cached.ID == ticket.ID {
+					col.Tickets[i] = ticket
+					return
 				}
 			}
 		}
 	}
-
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 }

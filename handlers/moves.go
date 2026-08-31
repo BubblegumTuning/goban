@@ -134,6 +134,6 @@ func HandleMoveV1(c *fiber.Ctx) error {
 // RegisterMoveRoutesV1 registers move-related routes.
 func RegisterMoveRoutesV1(app *fiber.App) {
 	moveGroup := app.Group("/api/v1/tickets/:id")
-	moveGroup.Use(middleware.ModerateLimiter())
+	moveGroup.Use(middleware.TicketActionLimiter())
 	moveGroup.Post("/move", AuthMiddlewareWithRole, HandleMoveV1)
 }

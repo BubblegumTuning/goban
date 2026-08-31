@@ -195,7 +195,6 @@ func CheckAuthStatus() fiber.Handler {
 	}
 }
 
-
 // Refresh handles POST /api/auth/refresh — issues a new JWT if the submitted token's signature is valid
 // and its issued-at time falls within the configured refresh grace period window.
 func Refresh(db store.TicketStore) fiber.Handler {
@@ -233,7 +232,7 @@ func Refresh(db store.TicketStore) fiber.Handler {
 		gracePeriod := auth.JWTRefreshGracePeriodDuration()
 		if now.Sub(issuedAt) > gracePeriod {
 			return c.Status(401).JSON(fiber.Map{
-				"error":   "token expired beyond grace period",
+				"error": "token expired beyond grace period",
 				"message": fmt.Sprintf("Token was issued %.1f days ago; refresh window has closed (grace period: %s)",
 					now.Sub(issuedAt).Hours()/24, gracePeriod),
 			})

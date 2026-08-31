@@ -25,7 +25,7 @@ Example:
   goban-cli regenerate-token --user-id 2   # for a different human admin`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		userID, _ := cmd.Flags().GetInt("user-id")
-		host := "kanban01" // production alias; override with --host if needed
+		host := sshHost(cmd)
 
 		// Build the exact remote command (DB_TYPE etc. required for goban-user-cli)
 		remoteCmd := fmt.Sprintf(
@@ -57,6 +57,14 @@ Example:
 
 		return nil
 	},
+}
+
+func sshHost(cmd *cobra.Command) string {
+	host, _ := cmd.Flags().GetString("host")
+	if host == "" {
+		return "kanban01"
+	}
+	return host
 }
 
 func init() {

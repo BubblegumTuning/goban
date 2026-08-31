@@ -247,6 +247,30 @@ func TestHandleCreateTicketSimple_BoardNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleCreateTicketSimple_WorksWhenCacheEmpty(t *testing.T) {
+	app, s, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	userID := createTestUser(t, s, "test-agent-cache-empty", models.RoleNormalAI)
+	tokenStr := registerTestToken(t, s, userID, "test-agent-cache-empty")
+
+	mu.Lock()
+	boardStates = make(map[string]*models.BoardState)
+	mu.Unlock()
+
+	reqBody := map[string]interface{}{
+		"title":    "Cache empty create",
+		"board_id": "test-board",
+	}
+	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/tickets/", reqBody)
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.Code != 201 {
+		t.Fatalf("Expected 201 when board is configured but cache empty, got %d", resp.Code)
+	}
+}
+
 func TestHandleUpdateTicket_Success(t *testing.T) {
 	app, s, cleanup := setupTestApp(t)
 	defer cleanup()
@@ -313,6 +337,29 @@ func TestHandleUpdateTicket_InvalidPriority(t *testing.T) {
 
 	if resp.Code != 400 {
 		t.Errorf("Expected status 400 for invalid priority, got %d", resp.Code)
+	}
+}
+
+func TestHandleUpdateTicket_InvalidLabels(t *testing.T) {
+	app, s, cleanup := setupTestApp(t)
+	defer cleanup()
+
+	createTestTicket(t, s, "upd-labels", "todo-0")
+	userID := createTestUser(t, s, "test-agent-update-labels", models.RoleNormalAI)
+	tokenStr := registerTestToken(t, s, userID, "test-agent-update-labels")
+
+	tooMany := make([]string, 11)
+	for i := range tooMany {
+		tooMany[i] = "l"
+	}
+	resp, err := makeRequestWithAuth(app, tokenStr, "PATCH", "/api/tickets/upd-labels", map[string]interface{}{
+		"labels": tooMany,
+	})
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.Code != 400 {
+		t.Fatalf("Expected status 400 for too many labels, got %d", resp.Code)
 	}
 }
 
@@ -795,8 +842,6 @@ func TestAuthMiddlewareWithRole_EmptyToken(t *testing.T) {
 	}
 }
 
-
-
 // ============================================================================
 // Archive Handler Tests (archive.go handlers)
 
@@ -832,12 +877,10 @@ func setupTestAppWithArchive(t *testing.T) (*fiber.App, *store.SQLiteStore, func
 	// Set up JWT for archive routes (AuthMiddlewareWithUser requires it)
 	auth.SetJWTSecret([]byte("test-jwt-secret-for-archiving"))
 
-
-
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterArchiveRoutes(app)
 
-_ = dbCleanup // ensure it's used
+	_ = dbCleanup // ensure it's used
 	cleanup := func() { dbCleanup(); _ = s.Close() }
 	return app, s, cleanup
 }
@@ -1259,7 +1302,7 @@ func setupTestAppWithAdmin(t *testing.T) (*fiber.App, *store.SQLiteStore, func()
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	RegisterAdminRoutes(app)
 
-_ = dbCleanup // ensure it's used
+	_ = dbCleanup // ensure it's used
 	cleanup := func() { dbCleanup(); _ = s.Close() }
 	return app, s, cleanup
 }
@@ -1293,7 +1336,7 @@ func TestAuthMiddlewareAdmin_Forbidden_NonAdmin(t *testing.T) {
 	defer cleanup()
 
 	userID := createTestUser(t, s, "test-normal-middleware", models.RoleNormalAI)
-	tokenStr := fmt.Sprintf("normal-token-test")
+	tokenStr := "normal-token-test"
 	s.CreateTokenWithUser(userID, "test-normal-middleware", auth.HashToken(tokenStr))
 
 	resp, err := makeRequestWithAuth(app, tokenStr, "GET", "/api/admin/users", nil)
@@ -1337,116 +1380,17 @@ func TestAuthMiddlewareAdmin_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestHandleAdminCreateUser_Success(t *testing.T) {
+func TestHandleAdminCreateUser_NotAvailable(t *testing.T) {
 	app, s, cleanup := setupTestAppWithAdmin(t)
 	defer cleanup()
 
-	tokenStr, _ := createAdminToken(t, s, "test-admin-creator")
-
-	reqBody := AdminCreateUserRequest{Username: "new-agent", Role: models.RoleNormalAI}
-	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", reqBody)
+	tokenStr, _ := createAdminToken(t, s, "test-admin-no-create")
+	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", map[string]string{"username": "new-agent", "role": models.RoleNormalAI})
 	if err != nil {
 		t.Fatalf("Request failed: %v", err)
 	}
-
-	if resp.Code != 201 {
-		t.Errorf("Expected status 201 for create user, got %d", resp.Code)
-		return
-	}
-
-	var result AdminCreateUserResponse
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result.User.Name != "new-agent" || result.User.Role != models.RoleNormalAI {
-		t.Errorf("Created user mismatch: %+v", result.User)
-	}
-	if result.Token == nil || result.Token.Token == "" {
-		t.Error("Expected non-empty token in create user response")
-	}
-
-	// Verify user exists in store
-	retrieved, _ := s.GetUserByName("new-agent")
-	if retrieved == nil {
-		t.Fatal("User not found in store after creation")
-	}
-	if retrieved.Role != models.RoleNormalAI {
-		t.Errorf("Expected role %s, got %s", models.RoleNormalAI, retrieved.Role)
-	}
-}
-
-func TestHandleAdminCreateUser_DuplicateUsername(t *testing.T) {
-	app, s, cleanup := setupTestAppWithAdmin(t)
-	defer cleanup()
-
-	tokenStr, _ := createAdminToken(t, s, "test-admin-dup")
-
-	createTestUser(t, s, "existing-agent", models.RoleNormalAI)
-
-	reqBody := AdminCreateUserRequest{Username: "existing-agent", Role: models.RoleNormalAI}
-	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", reqBody)
-	if err != nil {
-		t.Fatalf("Request failed: %v", err)
-	}
-
-	if resp.Code != 409 {
-		t.Errorf("Expected status 409 for duplicate username, got %d", resp.Code)
-	}
-}
-
-func TestHandleAdminCreateUser_InvalidRole(t *testing.T) {
-	app, s, cleanup := setupTestAppWithAdmin(t)
-	defer cleanup()
-
-	tokenStr, _ := createAdminToken(t, s, "test-admin-invalid-role")
-
-	reqBody := AdminCreateUserRequest{Username: "new-agent-role", Role: "INVALID_ROLE"}
-	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", reqBody)
-	if err != nil {
-		t.Fatalf("Request failed: %v", err)
-	}
-
-	if resp.Code != 400 {
-		t.Errorf("Expected status 400 for invalid role, got %d", resp.Code)
-	}
-}
-
-func TestHandleAdminCreateUser_MissingUsername(t *testing.T) {
-	app, s, cleanup := setupTestAppWithAdmin(t)
-	defer cleanup()
-
-	tokenStr, _ := createAdminToken(t, s, "test-admin-missing-user")
-
-	reqBody := AdminCreateUserRequest{Role: models.RoleNormalAI}
-	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", reqBody)
-	if err != nil {
-		t.Fatalf("Request failed: %v", err)
-	}
-
-	if resp.Code != 400 {
-		t.Errorf("Expected status 400 for missing username, got %d", resp.Code)
-	}
-}
-
-func TestHandleAdminCreateUser_DefaultRole(t *testing.T) {
-	app, s, cleanup := setupTestAppWithAdmin(t)
-	defer cleanup()
-
-	tokenStr, _ := createAdminToken(t, s, "test-admin-default-role")
-
-	reqBody := AdminCreateUserRequest{Username: "default-role-agent"}
-	resp, err := makeRequestWithAuth(app, tokenStr, "POST", "/api/admin/users", reqBody)
-	if err != nil {
-		t.Fatalf("Request failed: %v", err)
-	}
-
-	if resp.Code != 201 {
-		t.Errorf("Expected status 201 for create user with default role, got %d", resp.Code)
-		return
-	}
-
-	var result AdminCreateUserResponse
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result.User.Role != models.RoleNormalAI {
-		t.Errorf("Expected default role NORMAL_AI, got %s", result.User.Role)
+	if resp.Code == 201 {
+		t.Fatal("HTTP must not create users; use goban-user-cli against the database")
 	}
 }
 
@@ -1731,6 +1675,53 @@ func TestHandleAdminRegenerateToken_NotFound(t *testing.T) {
 	}
 }
 
+func TestHandleAdminResetPassword_Success(t *testing.T) {
+	app, s, cleanup := setupTestAppWithAdmin(t)
+	defer cleanup()
+
+	tokenStr, _ := createAdminToken(t, s, "test-admin-pw")
+	targetID := createTestUser(t, s, "pw-target", models.RoleNormalAI)
+
+	resp, err := makeRequestWithAuth(app, tokenStr, "PATCH", fmt.Sprintf("/api/admin/users/%d/password", targetID), map[string]string{"password": "new-secret"})
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.Code != 200 {
+		t.Errorf("Expected status 200 for password reset, got %d", resp.Code)
+	}
+}
+
+func TestHandleAdminResetPassword_EmptyPassword(t *testing.T) {
+	app, s, cleanup := setupTestAppWithAdmin(t)
+	defer cleanup()
+
+	tokenStr, _ := createAdminToken(t, s, "test-admin-pw-empty")
+	targetID := createTestUser(t, s, "pw-empty", models.RoleNormalAI)
+
+	resp, err := makeRequestWithAuth(app, tokenStr, "PATCH", fmt.Sprintf("/api/admin/users/%d/password", targetID), map[string]string{"password": ""})
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.Code != 400 {
+		t.Errorf("Expected status 400 for empty password, got %d", resp.Code)
+	}
+}
+
+func TestHandleAdminResetPassword_NotFound(t *testing.T) {
+	app, s, cleanup := setupTestAppWithAdmin(t)
+	defer cleanup()
+
+	tokenStr, _ := createAdminToken(t, s, "test-admin-pw-nf")
+
+	resp, err := makeRequestWithAuth(app, tokenStr, "PATCH", "/api/admin/users/99999/password", map[string]string{"password": "x"})
+	if err != nil {
+		t.Fatalf("Request failed: %v", err)
+	}
+	if resp.Code != 404 {
+		t.Errorf("Expected status 404 for missing user password reset, got %d", resp.Code)
+	}
+}
+
 // ============================================================================
 // Comment Handler Tests (comments.go handlers)
 
@@ -1765,7 +1756,7 @@ func setupTestAppWithComments(t *testing.T) (*fiber.App, *store.SQLiteStore, fun
 	commentGroupTest := app.Group("/api/tickets/:ticketId/comments", AuthMiddlewareWithRole)
 	commentGroupTest.Delete("", handleDeleteComment)
 
-_ = dbCleanup // ensure it's used
+	_ = dbCleanup // ensure it's used
 	cleanup := func() { dbCleanup(); _ = s.Close() }
 	return app, s, cleanup
 }
@@ -2384,7 +2375,7 @@ func TestInitBoards_Success(t *testing.T) {
 
 	boards := []config.Board{
 		{ID: "board-1", Title: "Board One", Columns: []string{"todo-0", "inprogress-0", "done-0"}},
-		{ID: "board-2", Title: "Board Two", Columns: []string{"backlog-0", "doing-0", "review-0", "done-0"}},
+		{ID: "board-2", Title: "Board Two", Columns: []string{"backlog-0", "inprogress-0", "review-0", "done-0"}},
 	}
 
 	InitBoards(boards, s)

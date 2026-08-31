@@ -14,21 +14,16 @@ import (
 // resetSSE resets the global SSE state to a clean initial condition.
 func resetSSE() {
 	subMu.Lock()
-	broadcastChan = make(chan models.SSEEvent, 100)
+	old := broadcastChan
+	broadcastChan = nil
 	subscribers = make(map[int64]*models.Subscriber)
 	nextSubscriberID = 0
 	droppedEvents = 0
 	subMu.Unlock()
 
-	// Start a fresh broadcast loop
-	go broadcastLoop()
-}
-
-// setupSSE initializes SSE for testing and returns cleanup function.
-func setupSSE(t *testing.T, bufferSize int) func() {
-	t.Helper()
-	Init(bufferSize)
-	return func() {} // Cleanup handled by resetSSE between tests
+	if old != nil {
+		close(old)
+	}
 }
 
 // ============================================================================
@@ -331,7 +326,7 @@ func TestEmit_BoardFiltering(t *testing.T) {
 	resetSSE()
 	Init(100)
 
-	subAll, _ := Subscribe("", 10)       // All boards
+	subAll, _ := Subscribe("", 10)           // All boards
 	subBoard1, _ := Subscribe("board-1", 10) // board-1 only
 	subBoard2, _ := Subscribe("board-2", 10) // board-2 only
 
@@ -446,7 +441,7 @@ func TestEmit_TimestampSet(t *testing.T) {
 	select {
 	case event := <-sub.Events:
 		if event.Timestamp.Before(before) || event.Timestamp.After(time.Now()) {
-			t.Errorf("Event timestamp out of expected range: %v (before=%v, now=%v)", 
+			t.Errorf("Event timestamp out of expected range: %v (before=%v, now=%v)",
 				event.Timestamp, before, time.Now())
 		}
 	case <-time.After(50 * time.Millisecond):
@@ -539,7 +534,7 @@ func TestSubscribeUnsubscribe_Concurrent(t *testing.T) {
 
 	metrics := GetMetrics()
 	if metrics["subscribers"] != 0 {
-		t.Errorf("Expected 0 subscribers after concurrent subscribe/unsubscribe, got %v", 
+		t.Errorf("Expected 0 subscribers after concurrent subscribe/unsubscribe, got %v",
 			metrics["subscribers"])
 	}
 }
@@ -563,12 +558,15 @@ func TestEmit_ConcurrentWithSubscribe(t *testing.T) {
 
 	// Subscribe concurrently with emissions
 	var subs []*models.Subscriber
+	var subsMu sync.Mutex
 	for i := 0; i < 3; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			sub, _ := Subscribe("", 20)
+			subsMu.Lock()
 			subs = append(subs, sub)
+			subsMu.Unlock()
 		}()
 	}
 

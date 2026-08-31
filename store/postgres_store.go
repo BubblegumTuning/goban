@@ -22,14 +22,28 @@ type PostgresStore struct {
 	config config.Config
 }
 
+func postgresDSN(cfg config.Config) (string, error) {
+	mode := cfg.DBSSLMode
+	if mode == "" {
+		mode = "disable"
+	}
+	switch mode {
+	case "disable", "require", "verify-ca", "verify-full", "allow", "prefer":
+	default:
+		return "", fmt.Errorf("invalid db_sslmode %q", mode)
+	}
+	return fmt.Sprintf(
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, mode), nil
+}
+
 // Init initializes the PostgreSQL database connection and creates tables if needed.
 func (s *PostgresStore) Init() error {
-	// Connection string with SSL mode disabled for local connections
-	connStr := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		s.config.DBHost, s.config.DBPort, s.config.DBUser, s.config.DBPassword, s.config.DBName)
+	connStr, err := postgresDSN(s.config)
+	if err != nil {
+		return err
+	}
 
-	var err error
 	s.db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		return fmt.Errorf("failed to open PostgreSQL connection: %w", err)
@@ -165,7 +179,6 @@ CREATE TABLE IF NOT EXISTS agent_tokens (
 		log.Printf("Warning: could not create task_links table: %v", err)
 	}
 
-
 	log.Printf("PostgreSQL database initialized at %s:%d/%s", s.config.DBHost, s.config.DBPort, s.config.DBName)
 	return nil
 }
@@ -199,13 +212,14 @@ func (s *PostgresStore) AddTaskLink(parentID, childID string) error {
 	}
 
 	_, err = tx.Exec(`INSERT INTO task_links (parent_id, child_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, parentID, childID)
-	if err == nil {
-		err = tx.Commit()
-	} else {
-		tx.Rollback()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("AddTaskLink exec: %w", err)
 	}
-
-	return fmt.Errorf("AddTaskLink exec: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddTaskLink commit: %w", err)
+	}
+	return nil
 }
 
 // RemoveTaskLink deletes a parent-child dependency.
@@ -1345,11 +1359,6 @@ func (s *PostgresStore) ListUsers() ([]models.User, error) {
 	}
 
 	return users, rows.Err()
-}
-
-// GetAllUsers retrieves all users (alias for backward compatibility).
-func (s *PostgresStore) GetAllUsers() ([]models.User, error) {
-	return s.ListUsers()
 }
 
 // GetUserByToken retrieves a user by agent token hash.

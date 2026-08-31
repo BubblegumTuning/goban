@@ -11,6 +11,7 @@ package models
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -19,9 +20,13 @@ import (
 var columnTitleToID = map[string]string{
 	// LEGACY FORMATS (lowercase, no suffix) - maintained for backward compatibility with existing tickets in database
 	// These were normalized via migration normalize_column_values.sql
-	"todo":       "todo-0",
-	"inprogress": "inprogress-0",
-	"done":       "done-0",
+	"todo":        "todo-0",
+	"to do":       "todo-0",
+	"inprogress":  "inprogress-0",
+	"in progress": "inprogress-0",
+	"in-progress": "inprogress-0",
+	"in_progress": "inprogress-0",
+	"done":        "done-0",
 
 	// PROPER CASE TITLES (display names) → lowercase canonical IDs with -0 suffix
 	// All column IDs are now consistently lowercase for API compatibility
@@ -43,15 +48,25 @@ var columnTitleToID = map[string]string{
 // Handles both column titles ("Review") and full IDs ("Review-0").
 // If the input is not found in columnTitleToID, falls back to appending "-0" suffix.
 func GetColumnID(title string) string {
-	// Optimization: if input already looks like a full column ID (ends with -0), return as-is
-	if len(title) > 2 && title[len(title)-2:] == "-0" {
-		return title
+	s := strings.TrimSpace(title)
+	if s == "" {
+		return "todo-0"
 	}
-	if id, exists := columnTitleToID[title]; exists {
+	lower := strings.ToLower(s)
+	// "doing" was removed as a column; old values fold into in progress.
+	if lower == "doing" || lower == "doing-0" {
+		return "inprogress-0"
+	}
+	if len(lower) > 2 && strings.HasSuffix(lower, "-0") {
+		return lower
+	}
+	if id, exists := columnTitleToID[lower]; exists {
 		return id
 	}
-	// Fallback: append "-0" to any unknown column title (graceful handling of new columns)
-	return fmt.Sprintf("%s-0", title)
+	if id, exists := columnTitleToID[s]; exists {
+		return id
+	}
+	return lower + "-0"
 }
 
 // GenerateTicketID creates a collision-free ticket ID using crypto/rand.

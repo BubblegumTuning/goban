@@ -201,28 +201,6 @@ func ListTokens() ([]models.AgentToken, error) {
 	return tokens, nil
 }
 
-// AuthMiddleware validates Bearer token in Authorization header.
-func AuthMiddleware(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-
-	if authHeader == "" {
-		return errors.New("missing authorization header")
-	}
-
-	parts := strings.SplitN(authHeader, " ", 2)
-	if len(parts) != 2 || parts[0] != "Bearer" {
-		return errors.New("invalid authorization format (expected 'Bearer <token>')")
-	}
-
-	token := parts[1]
-	if token == "" {
-		return errors.New("empty token")
-	}
-
-	_, err := ValidateToken(token)
-	return err
-}
-
 // SendAuthError returns a standardized authentication error response.
 func SendAuthError(c *fiber.Ctx, msg string) error {
 	return c.Status(401).JSON(fiber.Map{
@@ -371,7 +349,6 @@ func ParseJWT(tokenString string) (*JWTClaims, error) {
 		}
 		return JWTSecretKey, nil
 	}, jwt.WithoutClaimsValidation()) // Skip expiration validation
-
 	if err != nil {
 		return nil, fmt.Errorf("invalid JWT signature: %w", err)
 	}
@@ -383,34 +360,59 @@ func ParseJWT(tokenString string) (*JWTClaims, error) {
 	return nil, errors.New("invalid token claims")
 }
 
-// AuthMiddlewareWithUser validates JWT Bearer token and attaches user info to context.
-func AuthMiddlewareWithUser(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-
-	if authHeader == "" {
-		return SendAuthError(c, "missing authorization header")
+func bearerToken(c *fiber.Ctx) (string, error) {
+	h := c.Get("Authorization")
+	if h == "" {
+		return "", errors.New("missing authorization header")
 	}
-
-	parts := strings.SplitN(authHeader, " ", 2)
+	parts := strings.SplitN(h, " ", 2)
 	if len(parts) != 2 || parts[0] != "Bearer" {
-		return SendAuthError(c, "invalid authorization format (expected 'Bearer <token>')")
+		return "", errors.New("invalid authorization format (expected 'Bearer <token>')")
 	}
-
-	tokenString := parts[1]
-	if tokenString == "" {
-		return SendAuthError(c, "empty token")
+	if parts[1] == "" {
+		return "", errors.New("empty token")
 	}
+	return parts[1], nil
+}
 
-	// Verify JWT and extract claims
-	claims, err := VerifyJWT(tokenString)
+// UserFromBearer resolves a JWT or API token to a user.
+func UserFromBearer(token string) (*models.User, error) {
+	if claims, err := VerifyJWT(token); err == nil {
+		if claims.UserID == 0 || claims.Username == "" {
+			return nil, errors.New("JWT missing required identity fields (user_id and username)")
+		}
+		return &models.User{ID: claims.UserID, Name: claims.Username, Role: claims.Role}, nil
+	}
+	user, err := ValidateTokenWithRole(token)
 	if err != nil {
-		return SendAuthError(c, fmt.Sprintf("invalid or expired token: %v", err))
+		return nil, errors.New("invalid or expired token (neither JWT nor API token accepted)")
 	}
+	return user, nil
+}
 
-	// Attach user info to context for downstream handlers
-	c.Locals("user_id", claims.UserID)
-	c.Locals("username", claims.Username)
-	c.Locals("role", claims.Role)
+// Authenticate reads the Bearer token and returns the user.
+func Authenticate(c *fiber.Ctx) (*models.User, error) {
+	tok, err := bearerToken(c)
+	if err != nil {
+		return nil, err
+	}
+	return UserFromBearer(tok)
+}
 
+// AttachUser stores the user under both the struct and scalar context keys.
+func AttachUser(c *fiber.Ctx, user *models.User) {
+	c.Locals("user", user)
+	c.Locals("user_id", user.ID)
+	c.Locals("username", user.Name)
+	c.Locals("role", user.Role)
+}
+
+// AuthMiddlewareWithUser validates JWT or API Bearer token and attaches user info to context.
+func AuthMiddlewareWithUser(c *fiber.Ctx) error {
+	user, err := Authenticate(c)
+	if err != nil {
+		return SendAuthError(c, err.Error())
+	}
+	AttachUser(c, user)
 	return c.Next()
 }

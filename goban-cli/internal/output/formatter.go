@@ -75,19 +75,6 @@ func (f *Formatter) formatLine(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stdout, format+"\n", args...)
 }
 
-// PrintBoard lists a board in line format or JSON
-func (f *Formatter) PrintBoard(board types.Board) {
-	if f.format == "json" {
-		f.printJSON(board)
-		return
-	}
-
-	// Line format
-	id := fmt.Sprintf("%s[%s]%s", f.color(colorBlue), board.ID, f.color(colorReset))
-	name := fmt.Sprintf("%s%s%s", f.color(colorMagenta), board.Name, f.color(colorReset))
-	f.formatLine("Board: %s | ID: %s", name, id)
-}
-
 // PrintBoards lists multiple boards
 func (f *Formatter) PrintBoards(boards []types.Board) {
 	if f.format == "json" {
@@ -215,24 +202,6 @@ func (f *Formatter) PrintComments(comments []types.Comment) {
 			f.formatLine(" %s", line)
 		}
 	}
-}
-
-// PrintSuccess prints a success message
-func (f *Formatter) PrintSuccess(message string) {
-	if f.colorize {
-		fmt.Fprintf(os.Stdout, "%s✓ %s%s\n", f.color(colorGreen), message, f.color(colorReset))
-		return
-	}
-	f.formatLine("✓ " + message)
-}
-
-// PrintError prints an error message
-func (f *Formatter) PrintError(message string) {
-	if f.colorize {
-		fmt.Fprintf(os.Stderr, "%s✗ %s%s\n", f.color(colorRed), message, f.color(colorReset))
-		return
-	}
-	f.formatLine("✗ " + message)
 }
 
 // PrintWarning prints a warning message

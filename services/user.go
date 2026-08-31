@@ -55,6 +55,14 @@ func (s *UserService) UpdateUserRole(id int64, role string) error {
 	return s.store.UpdateUserRole(id, role)
 }
 
+// UpdateUserPassword bcrypt-hashes and stores a new password.
+func (s *UserService) UpdateUserPassword(id int64, newPassword string) error {
+	if newPassword == "" {
+		return fmt.Errorf("password is required")
+	}
+	return s.store.UpdateUserPassword(id, newPassword)
+}
+
 // ListUsers retrieves all users.
 func (s *UserService) ListUsers() ([]models.User, error) {
 	return s.store.ListUsers()

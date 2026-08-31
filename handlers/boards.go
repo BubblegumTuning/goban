@@ -12,8 +12,10 @@ import (
 
 func InitBoards(boards []config.Board, store TicketStore) {
 	boardStates = make(map[string]*models.BoardState)
+	knownBoardIDs = make(map[string]struct{}, len(boards))
 
 	for _, boardConfig := range boards {
+		knownBoardIDs[boardConfig.ID] = struct{}{}
 		boardState := &models.BoardState{
 			ID:    boardConfig.ID,
 			Title: boardConfig.Title,
@@ -123,11 +125,19 @@ func syncTicketInMemory(ticket *models.Ticket) {
 		targetColumnID, ticket.ID)
 }
 
+// SyncTicketInMemoryLocked updates the board cache for a ticket that changed
+// outside HTTP handlers (MCP). Safe to call from other packages.
+func SyncTicketInMemoryLocked(ticket *models.Ticket) {
+	mu.Lock()
+	defer mu.Unlock()
+	syncTicketInMemory(ticket)
+}
+
 func handleListBoards(c *fiber.Ctx) error {
 	mu.RLock()
 	defer mu.RUnlock()
 
-	_, truncateDesc := models.GetCompactLevel(c)
+	_, truncateDesc := compactLevel(c)
 
 	// Collect board IDs and sort for consistent ordering
 	boardIDs := make([]string, 0, len(boardStates))
@@ -180,7 +190,7 @@ func handleGetBoard(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Board not found"})
 	}
 
-	compact, truncateDesc := models.GetCompactLevel(c)
+	compact, truncateDesc := compactLevel(c)
 
 	if compact {
 		cboard := &models.CompactBoard{
@@ -211,6 +221,15 @@ func handleGetBoard(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(board)
+}
+
+func compactLevel(c *fiber.Ctx) (compact, truncateDesc bool) {
+	compact = c.Query("compact") == "true" || c.Query("c") == "1"
+	if !compact && c.Get("X-Compact") == "true" {
+		compact = true
+	}
+	truncateDesc = c.Query("truncate_desc") == "true" || c.Query("td") == "1"
+	return compact, truncateDesc
 }
 
 // RegisterBoardRoutes registers all board-related endpoints.

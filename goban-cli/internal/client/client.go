@@ -302,22 +302,6 @@ func (c *Client) GetTicketByID(ctx context.Context, ticketID string) (*types.Tic
 	return &ticket, nil
 }
 
-// GetTicket (legacy) returns a single ticket by ID from all boards using old /api/boards endpoint
-func (c *Client) GetTicket(ctx context.Context, boardID, ticketID string) (*types.Ticket, error) {
-	tickets, err := c.ListTickets(ctx, boardID)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range tickets {
-		if t.ID == ticketID {
-			return &t, nil
-		}
-	}
-
-	return nil, fmt.Errorf("ticket %s not found on board %s", ticketID, boardID)
-}
-
 // CreateTicket creates a new ticket on the specified board
 func (c *Client) CreateTicket(ctx context.Context, boardID string, req types.CreateTicketRequest) (*types.Ticket, error) {
 	url := c.baseURL + "/api/tickets" // Server uses /api/tickets endpoint
@@ -540,33 +524,6 @@ func (c *Client) UnlinkTickets(ctx context.Context, parentID, childID string) er
 	return nil
 }
 
-// GetTaskLinks retrieves all parent/child links for a ticket.
-func (c *Client) GetTaskLinks(ctx context.Context, ticketID string) (*LinksResponse, error) {
-	url := c.baseURL + "/api/tickets/" + ticketID + "/links"
-
-	httpReq, err := c.newRequest(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("get task links request: %w", err)
-	}
-
-	body, err := c.executeWithRetry(ctx, httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("get task links: %w", err)
-	}
-
-	var links LinksResponse
-	if err := json.Unmarshal(body, &links); err != nil {
-		return nil, fmt.Errorf("parse task links response: %w", err)
-	}
-	return &links, nil
-}
-
-// LinksResponse represents the response from GET /api/tickets/:id/links.
-type LinksResponse struct {
-	Parents  []string `json:"parents"`
-	Children []string `json:"children"`
-}
-
 // RunRequest represents a request to create or update a run.
 type RunRequest struct {
 	Summary  string `json:"summary,omitempty"`
@@ -575,14 +532,14 @@ type RunRequest struct {
 
 // TicketRunResponse represents a run record from the API.
 type TicketRunResponse struct {
-	ID        int64     `json:"id"`
-	TicketID  string    `json:"ticket_id"`
-	Outcome   string    `json:"outcome"`
-	StartedAt string    `json:"started_at"`
-	EndedAt   *string   `json:"ended_at,omitempty"`
-	Summary   string    `json:"summary,omitempty"`
-	Metadata  string    `json:"metadata,omitempty"`
-	Actor     string    `json:"actor"`
+	ID        int64   `json:"id"`
+	TicketID  string  `json:"ticket_id"`
+	Outcome   string  `json:"outcome"`
+	StartedAt string  `json:"started_at"`
+	EndedAt   *string `json:"ended_at,omitempty"`
+	Summary   string  `json:"summary,omitempty"`
+	Metadata  string  `json:"metadata,omitempty"`
+	Actor     string  `json:"actor"`
 }
 
 // CreateRun creates a new run for the given ticket.

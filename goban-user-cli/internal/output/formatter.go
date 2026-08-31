@@ -18,26 +18,6 @@ func New(format string, color bool) *Formatter {
 	return &Formatter{format: format, color: color}
 }
 
-// PrintUser prints user information.
-func (f *Formatter) PrintUser(u *client.User) error {
-	if f.format == "json" {
-		data, err := json.MarshalIndent(u, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(data))
-		return nil
-	}
-
-	// Line format (plain text for now)
-	fmt.Printf("User:\n")
-	fmt.Printf("  ID:        %d\n", u.ID)
-	fmt.Printf("  Name:      %s\n", u.Name)
-	fmt.Printf("  Role:      %s\n", u.Role)
-	fmt.Printf("  Created:   %s\n", u.CreatedAt.Format("2006-01-02 15:04:05"))
-	return nil
-}
-
 // PrintUsers prints a list of users.
 func (f *Formatter) PrintUsers(users []client.User) error {
 	if f.format == "json" {
@@ -120,17 +100,6 @@ func (f *Formatter) PrintSuccess(msg string, args ...interface{}) {
 		fmt.Println(string(dataBytes))
 	} else {
 		fmt.Printf("✓ "+msg+"\n", args...)
-	}
-}
-
-// PrintError prints an error message.
-func (f *Formatter) PrintError(msg string, args ...interface{}) {
-	if f.format == "json" {
-		data := map[string]string{"status": "error", "message": fmt.Sprintf(msg, args...)}
-		dataBytes, _ := json.MarshalIndent(data, "", "  ")
-		fmt.Println(string(dataBytes))
-	} else {
-		fmt.Printf("✗ "+msg+"\n", args...)
 	}
 }
 

@@ -1,5 +1,7 @@
 # Goban Deployment Scripts
 
+Narrative guide: [docs/deployment.md](../docs/deployment.md).
+
 ## Quick Reference
 
 | What you want to do | Command |
@@ -59,8 +61,8 @@ This builds locally, then deploys to the remote host via SSH/rsync with full ver
 /opt/goban/
 ├── bin/
 │   ├── goban           # Server binary
-│   ├── goban-cli       # Admin CLI
-│   └── goban-user-cli  # User CLI
+│   ├── goban-cli       # Ticket CLI (HTTP API)
+│   └── goban-user-cli  # User admin (direct DB)
 ├── config/
 │   └── goban.toml      # Production configuration
 ├── data/               # Database files (SQLite)

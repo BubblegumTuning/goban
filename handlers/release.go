@@ -87,6 +87,6 @@ func HandleRelease(c *fiber.Ctx) error {
 // RegisterReleaseRoutes registers release-related routes.
 func RegisterReleaseRoutes(app *fiber.App) {
 	releaseGroup := app.Group("/api/v1/tickets/:id")
-	releaseGroup.Use(middleware.ModerateLimiter())
+	releaseGroup.Use(middleware.TicketActionLimiter())
 	releaseGroup.Post("/release", AuthMiddlewareWithRole, HandleRelease)
 }

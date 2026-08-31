@@ -15,42 +15,14 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"goban/auth"
 	"goban/config"
-	"goban/mcp"
 	"goban/handlers"
+	"goban/mcp"
 	"goban/middleware"
 	"goban/store"
 	"goban/version"
 )
 
 var publicPath string
-
-// getConfigPath returns the path to goban.toml from env, config dir, or default
-func getConfigPath() string {
-	if path := os.Getenv("GOBAN_CONFIG_PATH"); path != "" {
-		return path
-	}
-	// Try standard locations in order
-	paths := []string{
-		"/opt/goban/config/goban.toml",
-		"/etc/goban/goban.toml",
-		"~/goban/goban.toml",
-		"./goban.toml",
-	}
-	for _, p := range paths {
-		if expanded, err := filepath.Abs(p); err == nil {
-			if home, err := os.UserHomeDir(); err == nil {
-				expanded = filepath.Clean(filepath.Join(expanded))
-				if strings.HasPrefix(expanded, "~/") {
-					expanded = strings.Replace(expanded, "~", home, 1)
-				}
-			}
-			if _, err := os.Stat(expanded); err == nil {
-				return expanded
-			}
-		}
-	}
-	return "./goban.toml" // fallback
-}
 
 func main() {
 	// Handle --version / -v before any config/DB initialization (fast cold start)
@@ -62,28 +34,14 @@ func main() {
 	}
 
 	// Load config
-	cfg := config.LoadConfig(getConfigPath())
+	cfg := config.LoadConfig("")
 	config.Debug = cfg.Debug // Gate debug logging globally
-	if cfg.MCPEnabled {
-		if err := mcp.Start(cfg); err != nil {
-			log.Fatalf("MCP server failed: %v", err)
-		}
-		return
-	}
 
-	// Get absolute path to static directory from config or env
-	publicPath = os.Getenv("GOBAN_STATIC_PATH")
-	if publicPath == "" {
-		publicPath = cfg.StaticPath
+	resolved, err := resolvePublicPath(os.Getenv("GOBAN_STATIC_PATH"), cfg.StaticPath)
+	if err != nil {
+		log.Fatalf("Failed to resolve static path: %v", err)
 	}
-	if publicPath == "" {
-		// Fallback: next to binary (dev mode)
-		ex, _ := os.Executable()
-		publicPath = filepath.Join(filepath.Dir(ex), "public")
-	}
-
-	// Create logger that respects log level configuration
-	logFilter := config.NewLogFilter(cfg.LogLevel)
+	publicPath = resolved
 
 	log.Printf("Serving static files from: %s", publicPath)
 
@@ -93,11 +51,6 @@ func main() {
 	// Panic recovery — MUST be first middleware to catch panics from all handlers.
 	// Returns 500 responses instead of crashing the server process.
 	app.Use(recover.New())
-
-	// Debug middleware - only enabled when log_level is "debug"
-	if logFilter.ShouldLog("debug") {
-		app.Use(DebugLogger(logFilter))
-	}
 
 	// CORS: configurable via cors_origins in goban.toml or GOBAN_CORS_ORIGINS env var.
 	// Defaults to same-origin only (no wildcard) for security — set explicitly if cross-origin needed.
@@ -115,10 +68,22 @@ func main() {
 	// Available in handlers via c.Locals("request_id").
 	app.Use(middleware.RequestID())
 
+	if err := config.RequireJWTSecret(cfg.JWTSecret); err != nil {
+		log.Fatal(err)
+	}
+
 	// Initialize database store
 	db, err := store.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
+	if cfg.MCPEnabled {
+		go func() {
+			if err := mcp.Start(cfg, db); err != nil {
+				log.Printf("[MCP] server failed: %v", err)
+			}
+		}()
 	}
 
 	// Serve static assets BEFORE catch-all (critical fix for CSS Embed Bug)
@@ -143,10 +108,8 @@ func main() {
 	// This ensures POST/PUT/PATCH requests reach handlers instead of getting 405 from static serving.
 	auth.SetJWTSecret([]byte(cfg.JWTSecret))
 	auth.SetJWTConfig(cfg.JWTValidity, cfg.RefreshGracePeriod)
-	if cfg.JWTSecret == "" {
-		log.Fatalf("GOBAN_JWT_SECRET must be set via config or GOBAN_JWT_SECRET env var")
-	}
 	handlers.RegisterRoutes(app, db, cfg.Boards)
+	mcp.SetAfterTicketWrite(handlers.SyncTicketInMemoryLocked)
 
 	// Health check endpoint (must be BEFORE catch-all handler for route precedence)
 	app.Get("/healthz", func(c *fiber.Ctx) error {
@@ -198,3 +161,21 @@ func main() {
 
 	select {} // Block until interrupted
 }
+
+// resolvePublicPath picks GOBAN_STATIC_PATH, then config, then <binary-dir>/public.
+// A failed os.Executable must not silently serve "./public".
+func resolvePublicPath(envPath, cfgPath string) (string, error) {
+	if envPath != "" {
+		return envPath, nil
+	}
+	if cfgPath != "" {
+		return cfgPath, nil
+	}
+	ex, err := lookUpExecutable()
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve static files next to binary: %w", err)
+	}
+	return filepath.Join(filepath.Dir(ex), "public"), nil
+}
+
+var lookUpExecutable = os.Executable

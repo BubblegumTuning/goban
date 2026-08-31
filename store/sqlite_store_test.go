@@ -2,9 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -1335,6 +1335,7 @@ func TestSQLiteStore_UserTimestamps(t *testing.T) {
 		t.Error("User CreatedAt and UpdatedAt should not be zero")
 	}
 }
+
 func TestSQLiteStore_CreateOrGetTicket(t *testing.T) {
 	store := newTestStore(t)
 	defer os.Remove(store.config.DBPath)
@@ -1398,10 +1399,10 @@ func TestSQLiteStore_CreateOrGetTicket(t *testing.T) {
 
 	// Call again with no key should create another new ticket (different ID)
 	ticket4 := &models.Ticket{
-		ID:          models.GenerateTicketID(),
-		Title:       "Another No Key Ticket",
-		Column:      "todo-0",
-		BoardID:     "test-board-1",
+		ID:      models.GenerateTicketID(),
+		Title:   "Another No Key Ticket",
+		Column:  "todo-0",
+		BoardID: "test-board-1",
 	}
 	result4, err := store.CreateOrGetTicket(ticket4)
 	if err != nil {
@@ -1458,4 +1459,3 @@ func TestSQLiteStore_CreateOrGetTicket(t *testing.T) {
 		t.Errorf("Expected title 'New After Archived', got %q", r2.Title)
 	}
 }
-

@@ -4,37 +4,35 @@ package models
 import (
 	"strings"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // Board defines a Kanban board configuration.
 type Board struct {
 	ID      string   `json:"id" yaml:"id"`
 	Title   string   `json:"title" yaml:"title"`
-	Columns []string `json:"columns" yaml:"columns"` // Column titles (e.g., "todo", "doing")
+	Columns []string `json:"columns" yaml:"columns"` // Column titles (e.g., "todo", "inprogress")
 	Desc    string   `json:"desc,omitempty" yaml:"desc,omitempty"`
 }
 
 // Ticket represents a work item on the board.
 type Ticket struct {
-	ID              string    `json:"id"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	Priority        string    `json:"priority"` // low, medium, high, critical
-	Assignee        string    `json:"assignee"`
-	IdempotencyKey  string    `json:"idempotency_key,omitempty"`
-	Column      string    `json:"column"` // Column ID (e.g., "todo-0")
-	BoardID     string    `json:"board_id"`
-	Labels      []string  `json:"labels,omitempty"`
-	DueDate     *string   `json:"due_date,omitempty"` // RFC3339 timestamp (nullable)
-	CreatedAt   string    `json:"created_at" db_type:"TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"`
-	UpdatedAt   string    `json:"updated_at" db_type:"TIMESTAMP DEFAULT CURRENT_TIMESTAMP"`
-	Subtasks    []Subtask `json:"subtasks,omitempty"`
-	Comments    []Comment `json:"comments,omitempty"`
-	Archived    bool      `json:"archived"`
-	ArchivedAt  *string   `json:"archived_at,omitempty"` // RFC3339 timestamp when archived (nullable)
-	ArchivedBy  *int      `json:"archived_by,omitempty"` // ID of admin who force-archived (nullable)
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Description    string    `json:"description"`
+	Priority       string    `json:"priority"` // low, medium, high, critical
+	Assignee       string    `json:"assignee"`
+	IdempotencyKey string    `json:"idempotency_key,omitempty"`
+	Column         string    `json:"column"` // Column ID (e.g., "todo-0")
+	BoardID        string    `json:"board_id"`
+	Labels         []string  `json:"labels,omitempty"`
+	DueDate        *string   `json:"due_date,omitempty"` // RFC3339 timestamp (nullable)
+	CreatedAt      string    `json:"created_at" db_type:"TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP"`
+	UpdatedAt      string    `json:"updated_at" db_type:"TIMESTAMP DEFAULT CURRENT_TIMESTAMP"`
+	Subtasks       []Subtask `json:"subtasks,omitempty"`
+	Comments       []Comment `json:"comments,omitempty"`
+	Archived       bool      `json:"archived"`
+	ArchivedAt     *string   `json:"archived_at,omitempty"` // RFC3339 timestamp when archived (nullable)
+	ArchivedBy     *int      `json:"archived_by,omitempty"` // ID of admin who force-archived (nullable)
 }
 
 // Subtask represents a checklist item within a ticket.
@@ -111,17 +109,6 @@ func (t *Ticket) ToCompact(truncateDesc bool) *CompactTicket {
 	return ct
 }
 
-// getCompactLevel determines if response should be compact based on query params.
-func GetCompactLevel(c *fiber.Ctx) (bool, bool) {
-	compact := c.Query("compact") == "true" || c.Query("c") == "1"
-	if !compact && c.Get("X-Compact") == "true" {
-		compact = true
-	}
-
-	truncateDesc := c.Query("truncate_desc") == "true" || c.Query("td") == "1"
-	return compact, truncateDesc
-}
-
 // Column represents a runtime column with its tickets.
 type Column struct {
 	ID      string    `json:"id"`
@@ -146,11 +133,11 @@ type TicketLocation struct {
 
 // SSEEvent represents an event to broadcast via Server-Sent Events.
 type SSEEvent struct {
-	Type      string    `json:"type"` // create, update, move, delete, archive, unarchive
-	TicketID  string    `json:"ticket_id"`
-	BoardID   string    `json:"board_id"`
-	Payload   fiber.Map `json:"payload"` // Extra context (column, title, etc.)
-	Timestamp time.Time `json:"timestamp"`
+	Type      string         `json:"type"` // create, update, move, delete, archive, unarchive
+	TicketID  string         `json:"ticket_id"`
+	BoardID   string         `json:"board_id"`
+	Payload   map[string]any `json:"payload"` // Extra context (column, title, etc.)
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 // Subscriber represents a client subscribed to SSE events.
@@ -251,16 +238,18 @@ type ActivityLog struct {
 
 // ActivityEventTypes are the standard event types for activity logging.
 const (
-	ActivityCreated   = "created"
-	ActivityClaimed   = "claimed"
-	ActivityMoved     = "moved"
-	ActivityReset     = "reset"
-	ActivityReviewed  = "reviewed"
-	ActivityCompleted = "completed"
-	ActivityArchived  = "archived"
-	ActivityRestored  = "restored"
-	ActivityCancelled = "cancelled"
-	ActivityCommented = "commented"
+	ActivityCreated    = "created"
+	ActivityClaimed    = "claimed"
+	ActivityMoved      = "moved"
+	ActivityReset      = "reset"
+	ActivityReviewed   = "reviewed"
+	ActivityCompleted  = "completed"
+	ActivityArchived   = "archived"
+	ActivityRestored   = "restored"
+	ActivityCancelled  = "cancelled"
+	ActivityCommented  = "commented"
+	ActivityRunStarted = "run_started"
+	ActivityRunUpdated = "run_updated"
 )
 
 // TicketRun tracks a single claim-completion cycle for a ticket.

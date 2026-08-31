@@ -106,6 +106,9 @@ func (c *Client) CreateUser(username, role string) (*CreateUserResponse, error) 
 			break
 		}
 	}
+	if createdToken == nil {
+		return nil, fmt.Errorf("failed to find newly created token (id=%d)", tokenID)
+	}
 
 	respUser := &User{
 		ID:        user.ID,

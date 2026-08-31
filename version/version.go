@@ -3,6 +3,6 @@ package version
 
 // These are set at build time via -ldflags.
 var (
-	Version   = "dev"
+	Version   = "1.2.0"
 	BuildTime = ""
 )

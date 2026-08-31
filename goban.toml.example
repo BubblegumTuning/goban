@@ -14,6 +14,7 @@ db_port = 5432
 db_user = "goban"  # Change to your PostgreSQL user
 db_password = ""  # Better set via DB_PASSWORD env var for security
 db_name = "goban"
+# db_sslmode = "disable"  # or require / verify-full; GOBAN_DB_SSLMODE overrides
 
 # JWT signing secret for web UI authentication
 # Override with GOBAN_JWT_SECRET environment variable in production
@@ -31,6 +32,6 @@ title = "AI → Human"
 desc = "Track tasks assigned from AI agents to human users"
 columns = ["Backlog", "To Do", "In Progress", "Review", "Done", "Cancelled"]
 
-# MCP server (enabled by default)
-mcp_enabled = true
+# MCP server (off by default; HTTP always starts)
+mcp_enabled = false
 mcp_transport = "stdio"

@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"log"
 	"sync"
 
 	"github.com/gofiber/fiber/v2"
@@ -14,64 +13,30 @@ import (
 	"goban/store"
 )
 
-// Local interface alias for store.TicketStore to avoid import conflicts in handlers package.
-// All methods are delegated to the underlying store implementation.
+// TicketStore is a local alias for store.TicketStore.
 type TicketStore = store.TicketStore
-
-// PaginatedStore extends TicketStore with pagination support and activity logging.
-type PaginatedStore interface {
-	TicketStore
-	GetPaginatedTickets(p store.Pagination) ([]*models.Ticket, int64, error)
-	// Activity log operations for audit trail
-	CreateActivityLog(logEntry *models.ActivityLog) (int64, error)
-	GetActivityLogs(ticketID string, limit int) ([]*models.ActivityLog, error)
-}
 
 // Pagination holds pagination parameters for queries (alias for store.Pagination).
 type Pagination = store.Pagination
 
 var (
-	boardStates map[string]*models.BoardState
-	dbStore     PaginatedStore // renamed from 'store' to avoid package conflict, now uses PaginatedStore interface
-	mu          sync.RWMutex
+	boardStates   map[string]*models.BoardState
+	knownBoardIDs map[string]struct{}
+	dbStore       store.TicketStore
+	mu            sync.RWMutex
 )
 
 // RegisterRoutes sets up all API endpoints using modular register functions.
-func RegisterRoutes(app *fiber.App, db PaginatedStore, boards []config.Board) {
+func RegisterRoutes(app *fiber.App, db store.TicketStore, boards []config.Board) {
 	dbStore = db
 
-	// Type-assert to TicketStore for service initializations
-	var ticketStore store.TicketStore
-	if ts, ok := interface{}(db).(store.TicketStore); ok {
-		ticketStore = ts
-	} else {
-		log.Printf("Warning: PaginatedStore does not implement store.TicketStore - some features disabled")
-	}
-
-	// Initialize auth package with store for token operations
-	if ticketStore != nil {
-		auth.SetStore(ticketStore)
-	}
-
-	// Initialize claim service with the store (uses store.TicketStore which includes BeginTx)
-	if ticketStore != nil {
-		claimService = services.NewClaimService(ticketStore)
-	}
-
-	// Initialize move service with the store
-	if ticketStore != nil {
-		InitMoveService(ticketStore)
-	}
-
-	// Initialize release service with the store
-	if ticketStore != nil {
-		InitReleaseService(ticketStore)
-	}
-
-	// Initialize user service for registration and user management
-	if ticketStore != nil {
-		userService = services.NewUserService(ticketStore)
-		adminUserService = userService // Same service instance for admin operations
+	if db != nil {
+		auth.SetStore(db)
+		claimService = services.NewClaimService(db)
+		InitMoveService(db)
+		InitReleaseService(db)
+		userService = services.NewUserService(db)
+		adminUserService = userService
 	}
 
 	// Initialize SSE subsystem with 100 event buffer
@@ -80,14 +45,14 @@ func RegisterRoutes(app *fiber.App, db PaginatedStore, boards []config.Board) {
 	InitBoards(boards, db)
 
 	// Register all route groups (order matters: more specific routes first)
-	RegisterAuthRoutes(app, ticketStore) // Auth endpoints (login/logout/check)
-	RegisterArchiveRoutes(app)           // Archive routes - must come before generic patterns to avoid prefix conflicts
-	RegisterClaimRoutes(app)             // Claim endpoint needs to be registered before generic ticket routes
-	RegisterActivityRoutes(app)          // Activity log retrieval - must come before generic :id routes
-	RegisterMoveRoutesV1(app)            // Move v1 endpoint with permissions
-	RegisterReleaseRoutes(app)           // Release endpoint for unassigning tickets
-	RegisterRegistrationRoutes(app)      // Self-registration endpoint (no auth required)
-	RegisterAdminRoutes(app)             // Admin endpoints (require HUMAN_ADMIN role)
+	RegisterAuthRoutes(app, db)     // Auth endpoints (login/logout/check)
+	RegisterArchiveRoutes(app)      // Archive routes - must come before generic patterns to avoid prefix conflicts
+	RegisterClaimRoutes(app)        // Claim endpoint needs to be registered before generic ticket routes
+	RegisterActivityRoutes(app)     // Activity log retrieval - must come before generic :id routes
+	RegisterMoveRoutesV1(app)       // Move v1 endpoint with permissions
+	RegisterReleaseRoutes(app)      // Release endpoint for unassigning tickets
+	RegisterRegistrationRoutes(app) // Self-registration endpoint (no auth required)
+	RegisterAdminRoutes(app)        // Admin endpoints (require HUMAN_ADMIN role)
 	RegisterSSERoutes(app)
 	RegisterBoardRoutes(app)
 	RegisterTicketRoutes(app, dbStore)

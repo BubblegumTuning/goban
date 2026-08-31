@@ -84,8 +84,10 @@ func TestCalculateScore(t *testing.T) {
 	t.Run("territory counts are correct with prisoners and komi", func(t *testing.T) {
 		board := newEmptyBoard(5)
 		// Surround center (2,2) with Black stones using diamond pattern
-		board[1][2] = Black; board[3][2] = Black
-		board[2][1] = Black; board[2][3] = Black
+		board[1][2] = Black
+		board[3][2] = Black
+		board[2][1] = Black
+		board[2][3] = Black
 		for r := 0; r < 5; r++ {
 			for c := 0; c < 5; c++ {
 				if board[r][c] == Empty && !(r == 2 && c == 2) {
@@ -140,9 +142,14 @@ func TestCalculateScore(t *testing.T) {
 		board := newEmptyBoard(5)
 		// White territory = 1 point; komi = 6.5 -> white total = 7.5
 		// Black territory = 0; no prisoners -> black total = 0
-		board[1][1] = White; board[1][2] = White; board[1][3] = White
-		board[2][1] = White;                       board[2][3] = White
-		board[3][1] = White; board[3][2] = White; board[3][3] = White
+		board[1][1] = White
+		board[1][2] = White
+		board[1][3] = White
+		board[2][1] = White
+		board[2][3] = White
+		board[3][1] = White
+		board[3][2] = White
+		board[3][3] = White
 
 		result := CalculateScore(board, 0, 0)
 		if result.Winner != "white" {
@@ -185,8 +192,10 @@ func TestCalculateScore(t *testing.T) {
 	t.Run("prisoners affect totals correctly", func(t *testing.T) {
 		board := newEmptyBoard(5)
 		// Surround center (2,2) with Black stones using diamond pattern
-		board[1][2] = Black; board[3][2] = Black
-		board[2][1] = Black; board[2][3] = Black
+		board[1][2] = Black
+		board[3][2] = Black
+		board[2][1] = Black
+		board[2][3] = Black
 		for r := 0; r < 5; r++ {
 			for c := 0; c < 5; c++ {
 				if board[r][c] == Empty && !(r == 2 && c == 2) {
@@ -196,7 +205,7 @@ func TestCalculateScore(t *testing.T) {
 		}
 
 		result := CalculateScore(board, 0, 2) // black prisoners=0, white prisoners=2
-		if result.BlackTotal != float64(3) { // territory(1) + white_prisoners(2) = 3
+		if result.BlackTotal != float64(3) {  // territory(1) + white_prisoners(2) = 3
 			t.Errorf("expected black total 3, got %.1f", result.BlackTotal)
 		}
 		if result.WhiteTotal != float64(6.5) { // territory(0) + komi(6.5) + black_prisoners(0) = 6.5
@@ -218,9 +227,14 @@ func TestCalculateScore(t *testing.T) {
 func TestFloodFillTerritory(t *testing.T) {
 	t.Run("empty region bordered only by black returns black boundary", func(t *testing.T) {
 		board := newEmptyBoard(5)
-		board[1][1] = Black; board[1][2] = Black; board[1][3] = Black
-		board[2][1] = Black;                       board[2][3] = Black
-		board[3][1] = Black; board[3][2] = Black; board[3][3] = Black
+		board[1][1] = Black
+		board[1][2] = Black
+		board[1][3] = Black
+		board[2][1] = Black
+		board[2][3] = Black
+		board[3][1] = Black
+		board[3][2] = Black
+		board[3][3] = Black
 
 		visited := make(map[string]bool)
 		boundaryColors := floodFillTerritory(board, 2, 2, visited)
@@ -260,9 +274,14 @@ func TestFloodFillTerritory(t *testing.T) {
 		}
 		// Actually just create a simple surrounded region
 		board = newEmptyBoard(5)
-		board[1][1] = Black; board[1][2] = Black; board[1][3] = Black
-		board[2][1] = Black;                       board[2][3] = Black
-		board[3][1] = Black; board[3][2] = Black; board[3][3] = Black
+		board[1][1] = Black
+		board[1][2] = Black
+		board[1][3] = Black
+		board[2][1] = Black
+		board[2][3] = Black
+		board[3][1] = Black
+		board[3][2] = Black
+		board[3][3] = Black
 
 		visited := make(map[string]bool)
 		floodFillTerritory(board, 2, 2, visited)
@@ -302,8 +321,10 @@ func TestFloodFillTerritory(t *testing.T) {
 func TestCountRegion(t *testing.T) {
 	t.Run("single empty point counts as 1", func(t *testing.T) {
 		board := newEmptyBoard(5)
-		board[1][2] = Black; board[3][2] = Black
-		board[2][1] = Black; board[2][3] = Black
+		board[1][2] = Black
+		board[3][2] = Black
+		board[2][1] = Black
+		board[2][3] = Black
 		count := countRegion(board, 2, 2)
 		if count != 1 {
 			t.Errorf("expected count 1 for single enclosed point, got %d", count)
@@ -338,8 +359,11 @@ func TestCountRegion(t *testing.T) {
 
 	t.Run("region that spans entire board edge", func(t *testing.T) {
 		board := newEmptyBoard(5)
-		board[4][0] = Black; board[4][1] = Black; board[4][2] = Black
-		board[4][3] = Black; board[4][4] = Black // bottom row all black
+		board[4][0] = Black
+		board[4][1] = Black
+		board[4][2] = Black
+		board[4][3] = Black
+		board[4][4] = Black // bottom row all black
 
 		count := countRegion(board, 2, 2)
 		// This counts the large empty region above the black wall

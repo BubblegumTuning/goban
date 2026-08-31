@@ -104,8 +104,3 @@ func Load() (*Config, error) {
 
 	return cfg, nil
 }
-
-// ConfigFile returns the path to the loaded config file
-func ConfigFile() string {
-	return viper.ConfigFileUsed()
-}

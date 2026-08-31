@@ -49,7 +49,3 @@ func NewNetworkError(message, details string) *ClassifiedError {
 func NewVerifyFailedError(message, details string) *ClassifiedError {
 	return &ClassifiedError{Category: CatVerifyFailed, Message: message, Details: details}
 }
-
-func NewConfigError(message, details string) *ClassifiedError {
-	return &ClassifiedError{Category: CatConfig, Message: message, Details: details}
-}

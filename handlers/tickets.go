@@ -127,61 +127,65 @@ func handleUpdateTicket(c *fiber.Ctx) error {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == id {
-					if req.Title != nil {
-						t.Title = *req.Title
-					}
-					if req.Description != nil {
-						t.Description = *req.Description
-					}
-					if req.Priority != nil {
-						t.Priority = normalizePriority(*req.Priority)
-					}
-					if req.Assignee != nil {
-						t.Assignee = *req.Assignee
-					}
-					if req.DueDate != nil {
-						val := *req.DueDate
-						t.DueDate = &val
-					}
-					if req.Subtasks != nil {
-						t.Subtasks = *req.Subtasks
-					}
-					if req.Labels != nil {
-						t.Labels = *req.Labels
-					} else {
-					}
-		t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-				if err := saveTicketToDB(t); err != nil {
-					log.Printf("ERROR: Failed to persist ticket %s to database: %v", id, err)
-					return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to persist update: %v", err)})
-				}
-
-				log.Printf("Updated ticket %s (partial update) - persisted to DB", id)
-				// Sync in-memory cache since we already hold mu.Lock()
-				syncTicketInMemory(t)
-
-				sse.Emit("update", id, boardID, fiber.Map{
-					"title":  t.Title,
-					"column": t.Column,
-				})
-
-				return c.JSON(t) // Return full ticket object for CLI compatibility
-				}
+	if req.Labels != nil {
+		if err := validation.ValidateLabels(*req.Labels); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
+	if req.Subtasks != nil {
+		for _, st := range *req.Subtasks {
+			if err := validation.ValidateSubtaskTitle(st.Title); err != nil {
+				return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 			}
 		}
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	mu.Lock()
+	defer mu.Unlock()
+
+	t, err := loadTicketFromDB(id)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	}
+
+	if req.Title != nil {
+		t.Title = *req.Title
+	}
+	if req.Description != nil {
+		t.Description = *req.Description
+	}
+	if req.Priority != nil {
+		t.Priority = normalizePriority(*req.Priority)
+	}
+	if req.Assignee != nil {
+		t.Assignee = *req.Assignee
+	}
+	if req.DueDate != nil {
+		val := *req.DueDate
+		t.DueDate = &val
+	}
+	if req.Subtasks != nil {
+		t.Subtasks = *req.Subtasks
+	}
+	if req.Labels != nil {
+		t.Labels = *req.Labels
+	}
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist ticket %s to database: %v", id, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to persist update: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Updated ticket %s (partial update) - persisted to DB", id)
+
+	sse.Emit("update", id, t.BoardID, fiber.Map{
+		"title":  t.Title,
+		"column": t.Column,
+	})
+
+	return c.JSON(t)
 }
 
 func saveTicketToDB(ticket *models.Ticket) error {
@@ -237,10 +241,11 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	board, exists := boardStates[boardID]
-	if !exists {
+	if _, ok := knownBoardIDs[boardID]; !ok {
 		return c.Status(404).JSON(fiber.Map{"error": "Board not found"})
 	}
+
+	board := boardStates[boardID]
 
 	// Get idempotency key from header or query parameter if not in body
 	idempKey := req.IdempotencyKey
@@ -279,33 +284,23 @@ func handleCreateTicketSimple(c *fiber.Ctx) error {
 	}
 
 	targetColID := models.GetColumnID(newTicket.Column)
-	for _, col := range board.Columns {
-		if col.ID == targetColID {
-			col.Tickets = append(col.Tickets, newTicket)
-			break
+	if board != nil {
+		for _, col := range board.Columns {
+			if col.ID == targetColID {
+				col.Tickets = append(col.Tickets, newTicket)
+				break
+			}
 		}
 	}
 
 	// Persist to database — use CreateOrGetTicket for idempotent creation
 	var createdTicket *models.Ticket
-	type orgeStore interface {
-		CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error)
-	}
 	if dbStore != nil {
-		if ogs, ok := interface{}(dbStore).(orgeStore); ok {
-			var createErr error
-			createdTicket, createErr = ogs.CreateOrGetTicket(newTicket)
-			if createErr != nil {
-				log.Printf("ERROR: Failed to create ticket via CreateOrGetTicket: %v", createErr)
-				return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", createErr)})
-			}
-		} else {
-			// Fallback for stores without CreateOrGetTicket (should not happen in production)
-			if err := dbStore.CreateTicket(newTicket); err != nil {
-				log.Printf("ERROR: Failed to persist ticket %s to database: %v", newTicket.ID, err)
-				return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", err)})
-			}
-			createdTicket = newTicket
+		var createErr error
+		createdTicket, createErr = dbStore.CreateOrGetTicket(newTicket)
+		if createErr != nil {
+			log.Printf("ERROR: Failed to create ticket via CreateOrGetTicket: %v", createErr)
+			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save ticket: %v", createErr)})
 		}
 	} else {
 		createdTicket = newTicket
@@ -336,7 +331,7 @@ type PaginatedTicketsResponse struct {
 }
 
 // handleListTicketsPaginated returns tickets with pagination and optional column filtering.
-func handleListTicketsPaginated(ticketStore PaginatedStore) func(c *fiber.Ctx) error {
+func handleListTicketsPaginated(ticketStore store.TicketStore) func(c *fiber.Ctx) error {
 	return func(c *fiber.Ctx) error {
 		// Parse board_id filter from query parameters (optional)
 		boardID := c.Query("board_id")
@@ -362,10 +357,9 @@ func handleListTicketsPaginated(ticketStore PaginatedStore) func(c *fiber.Ctx) e
 		var limit, offset int
 		if l, err := strconv.Atoi(limitStr); err == nil {
 			limit = l
-		} else 		if o, err := strconv.Atoi(offsetStr); err == nil {
+		} else if o, err := strconv.Atoi(offsetStr); err == nil {
 			offset = o
-		} else 
-		if limit <= 0 {
+		} else if limit <= 0 {
 			limit = 50
 		}
 		if limit > 1000 {
@@ -377,23 +371,7 @@ func handleListTicketsPaginated(ticketStore PaginatedStore) func(c *fiber.Ctx) e
 
 		p := store.Pagination{Limit: limit, Offset: offset}
 
-		// Try to use GetTicketsWithFilter if available (newer store implementations)
-		// Fall back to GetPaginatedTickets for backwards compatibility
-		type filterStore interface {
-			GetTicketsWithFilter(allowedColumns []string, p store.Pagination) ([]*models.Ticket, int64, error)
-		}
-
-		var tickets []*models.Ticket
-		var totalCount int64
-		var err error
-
-		if fs, ok := ticketStore.(filterStore); ok {
-			tickets, totalCount, err = fs.GetTicketsWithFilter(allowedColumns, p)
-		} else {
-			// Fallback: get all and filter in memory (less efficient but backwards compatible)
-			tickets, totalCount, err = ticketStore.GetPaginatedTickets(p)
-		}
-
+		tickets, totalCount, err := ticketStore.GetTicketsWithFilter(allowedColumns, p)
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to fetch tickets: %v", err)})
 		}
@@ -441,11 +419,10 @@ func HandleGetTicket(c *fiber.Ctx) error {
 }
 
 // RegisterTicketRoutes sets up all ticket-related API routes.
-func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
-
+func RegisterTicketRoutes(app *fiber.App, ts store.TicketStore) {
 	// Public read endpoints — no auth required.
 	publicTickets := app.Group("/api/tickets")
-	publicTickets.Get("/", handleListTicketsPaginated(store))
+	publicTickets.Get("/", handleListTicketsPaginated(ts))
 	publicTickets.Get("/:id", HandleGetTicket)
 
 	// Write endpoints — require authentication.
@@ -466,11 +443,9 @@ func RegisterTicketRoutes(app *fiber.App, store PaginatedStore) {
 	publicTickets.Get("/:id/runs/active", handleGetActiveRun)
 	ticketGroup.Put("/:id/runs", handleUpdateRun)
 
-
 	// Public v1 read endpoints — no auth required.
-	app.Get("/api/v1/tickets", handleListTicketsPaginated(store))
+	app.Get("/api/v1/tickets", handleListTicketsPaginated(ts))
 
 	// Get single ticket by ID (v1 API - public read)
 	app.Get("/api/v1/tickets/:id", HandleGetTicket)
-
-	}
+}

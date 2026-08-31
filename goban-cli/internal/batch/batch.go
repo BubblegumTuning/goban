@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"goban-cli/internal/client"
-	gerr "goban-cli/internal/errors"
 )
 
 // BatchResult holds the aggregated results of a batch operation.
@@ -208,9 +207,4 @@ func PrintBatchResult(result BatchResult, targetStatus string) {
 
 	fmt.Printf("\nSummary: %d succeeded, %d skipped, %d failed\n",
 		len(result.Succeeded), len(result.Skipped), len(result.Failed))
-}
-
-// NewUserError creates a user-facing error from classified errors.
-func UserError(msg string) error {
-	return gerr.NewUserError(msg, "")
 }

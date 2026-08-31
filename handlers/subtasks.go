@@ -32,41 +32,36 @@ func handleAddSubtask(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					subtask := models.Subtask{
-						Title:     req.Title,
-						Completed: req.Done,
-					}
-
-					t.Subtasks = append(t.Subtasks, subtask)
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist subtask on ticket %s: %v", ticketID, err)
-						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save subtask: %v", err)})
-					}
-
-					log.Printf("Added subtask '%s' to ticket %s", req.Title, ticketID)
-
-					sse.Emit("subtask_add", ticketID, boardID, fiber.Map{
-						"ticket_id": ticketID,
-						"title":     req.Title,
-					})
-
-					return c.JSON(fiber.Map{
-						"status":   "added",
-						"subtasks": t.Subtasks,
-					})
-				}
-			}
-		}
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	subtask := models.Subtask{
+		Title:     req.Title,
+		Completed: req.Done,
+	}
+
+	t.Subtasks = append(t.Subtasks, subtask)
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist subtask on ticket %s: %v", ticketID, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to save subtask: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Added subtask '%s' to ticket %s", req.Title, ticketID)
+
+	sse.Emit("subtask_add", ticketID, t.BoardID, fiber.Map{
+		"ticket_id": ticketID,
+		"title":     req.Title,
+	})
+
+	return c.JSON(fiber.Map{
+		"status":   "added",
+		"subtasks": t.Subtasks,
+	})
 }
 
 func handleUpdateSubtask(c *fiber.Ctx) error {
@@ -89,43 +84,38 @@ func handleUpdateSubtask(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					if subtaskIndex >= len(t.Subtasks) {
-						return c.Status(404).JSON(fiber.Map{"error": "Subtask not found"})
-					}
-
-					t.Subtasks[subtaskIndex].Title = req.Title
-					t.Subtasks[subtaskIndex].Completed = req.Done
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist subtask update on ticket %s: %v", ticketID, err)
-						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to update subtask: %v", err)})
-					}
-
-					log.Printf("Updated subtask %d on ticket %s", subtaskIndex, ticketID)
-
-					sse.Emit("subtask_update", ticketID, boardID, fiber.Map{
-						"ticket_id": ticketID,
-						"index":     subtaskIndex,
-						"title":     req.Title,
-						"completed": req.Done,
-					})
-
-					return c.JSON(fiber.Map{
-						"status":   "updated",
-						"subtasks": t.Subtasks,
-					})
-				}
-			}
-		}
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	if subtaskIndex >= len(t.Subtasks) {
+		return c.Status(404).JSON(fiber.Map{"error": "Subtask not found"})
+	}
+
+	t.Subtasks[subtaskIndex].Title = req.Title
+	t.Subtasks[subtaskIndex].Completed = req.Done
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist subtask update on ticket %s: %v", ticketID, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to update subtask: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Updated subtask %d on ticket %s", subtaskIndex, ticketID)
+
+	sse.Emit("subtask_update", ticketID, t.BoardID, fiber.Map{
+		"ticket_id": ticketID,
+		"index":     subtaskIndex,
+		"title":     req.Title,
+		"completed": req.Done,
+	})
+
+	return c.JSON(fiber.Map{
+		"status":   "updated",
+		"subtasks": t.Subtasks,
+	})
 }
 
 func handleDeleteSubtask(c *fiber.Ctx) error {
@@ -139,40 +129,35 @@ func handleDeleteSubtask(c *fiber.Ctx) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	for _, board := range boardStates {
-		boardID := board.ID
-		for _, col := range board.Columns {
-			for _, t := range col.Tickets {
-				if t.ID == ticketID {
-					if subtaskIndex >= len(t.Subtasks) {
-						return c.Status(404).JSON(fiber.Map{"error": "Subtask not found"})
-					}
-
-					t.Subtasks = append(t.Subtasks[:subtaskIndex], t.Subtasks[subtaskIndex+1:]...)
-					t.UpdatedAt = time.Now().Format(time.RFC3339)
-
-					if err := saveTicketToDB(t); err != nil {
-						log.Printf("ERROR: Failed to persist subtask deletion on ticket %s: %v", ticketID, err)
-						return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to delete subtask: %v", err)})
-					}
-
-					log.Printf("Deleted subtask %d from ticket %s", subtaskIndex, ticketID)
-
-					sse.Emit("subtask_delete", ticketID, boardID, fiber.Map{
-						"ticket_id": ticketID,
-						"index":     subtaskIndex,
-					})
-
-					return c.JSON(fiber.Map{
-						"status":   "deleted",
-						"subtasks": t.Subtasks,
-					})
-				}
-			}
-		}
+	t, err := loadTicketFromDB(ticketID)
+	if err != nil || t == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
 	}
 
-	return c.Status(404).JSON(fiber.Map{"error": "Ticket not found"})
+	if subtaskIndex >= len(t.Subtasks) {
+		return c.Status(404).JSON(fiber.Map{"error": "Subtask not found"})
+	}
+
+	t.Subtasks = append(t.Subtasks[:subtaskIndex], t.Subtasks[subtaskIndex+1:]...)
+	t.UpdatedAt = time.Now().Format(time.RFC3339)
+
+	if err := saveTicketToDB(t); err != nil {
+		log.Printf("ERROR: Failed to persist subtask deletion on ticket %s: %v", ticketID, err)
+		return c.Status(500).JSON(fiber.Map{"error": fmt.Sprintf("Failed to delete subtask: %v", err)})
+	}
+	replaceTicketInCache(t)
+
+	log.Printf("Deleted subtask %d from ticket %s", subtaskIndex, ticketID)
+
+	sse.Emit("subtask_delete", ticketID, t.BoardID, fiber.Map{
+		"ticket_id": ticketID,
+		"index":     subtaskIndex,
+	})
+
+	return c.JSON(fiber.Map{
+		"status":   "deleted",
+		"subtasks": t.Subtasks,
+	})
 }
 
 // RegisterSubtaskRoutes registers all subtask-related endpoints.

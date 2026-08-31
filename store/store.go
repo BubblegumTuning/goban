@@ -11,7 +11,6 @@ import (
 // New creates a new TicketStore based on configuration.
 // Returns SQLite store by default, or PostgreSQL if DBType is "postgres".
 func New(cfg config.Config) (TicketStore, error) {
-
 	if cfg.DBType == "postgres" || cfg.DBType == "postgresql" {
 		log.Printf("Creating PostgreSQL store for %s:%d/%s",
 			cfg.DBHost, cfg.DBPort, cfg.DBName)

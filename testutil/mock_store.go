@@ -28,7 +28,7 @@ type MockStore struct {
 	// Task link storage for parent/child dependencies
 	taskLinks []mockLink
 	// Run history storage for per-attempt tracking
-	runs      []*models.TicketRun
+	runs []*models.TicketRun
 
 	// Transaction support
 	txTickets     map[string]*models.Ticket
@@ -854,4 +854,3 @@ func (m *MockStore) GetActiveRun(ticketID string) (*models.TicketRun, error) {
 
 	return nil, sql.ErrNoRows
 }
-

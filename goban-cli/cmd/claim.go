@@ -131,7 +131,7 @@ Use --status/-s to claim and immediately move to a different status:
 }
 
 func init() {
-	claimCmd.Flags().StringP("status", "s", "",
+	claimCmd.Flags().StringVarP(&targetStatus, "status", "s", "",
 		"After claiming, move ticket to this status (backlog, todo, inprogress, review, done, cancelled)")
 	rootCmd.AddCommand(claimCmd)
 }

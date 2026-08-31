@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
-	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -36,46 +35,13 @@ func newTestApp(t *testing.T, boards ...config.Board) (*fiber.App, *testutil.Moc
 		boards = []config.Board{{
 			ID:      "test-board",
 			Title:   "Test Board",
-			Columns: []string{"todo", "doing", "done"},
+			Columns: []string{"todo", "inprogress", "done"},
 		}}
 	}
 
 	RegisterRoutes(app, store, boards)
 
 	return app, store
-}
-
-// req creates an HTTP request for testing handlers.
-func (s *handlerSuite) req(method, path string, body interface{}) *http.Response {
-	req := httptest.NewRequest(method, path, nil)
-	if body != nil {
-		data, _ := json.Marshal(body)
-		req = httptest.NewRequest(method, path, bytes.NewReader(data))
-	req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := s.app.Test(req)
-	if err != nil {
-		s.t.Fatalf("app.Test failed: %v", err)
-	}
-	return resp
-}
-
-// reqWithAuth creates an authenticated request using the given token.
-func (s *handlerSuite) reqWithToken(method, path string, body interface{}, token string) *http.Response {
-	req := httptest.NewRequest(method, path, nil)
-	if body != nil {
-		data, _ := json.Marshal(body)
-		req = httptest.NewRequest(method, path, bytes.NewReader(data))
-	req.Header.Set("Content-Type", "application/json")
-	}
-	if token != "" {
-	req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := s.app.Test(req)
-	if err != nil {
-		s.t.Fatalf("app.Test failed: %v", err)
-	}
-	return resp
 }
 
 // handlerSuite bundles test state for cleaner handler tests.
@@ -625,7 +591,7 @@ func TestMoveTicket_AuthRequired(t *testing.T) {
 	s := newHandlerSuite(t)
 	s.createTicket("t-move")
 
-	body := map[string]interface{}{"column": "doing-0"}
+	body := map[string]interface{}{"column": "inprogress-0"}
 	req := httptest.NewRequest("POST", "/api/v1/tickets/t/move-move", bytes.NewReader(mustJSON(body)))
 	req.Header.Set("Content-Type", "application/json")
 	resp, _ := s.app.Test(req)
@@ -869,7 +835,7 @@ func TestAdminListUsers_AdminOnly(t *testing.T) {
 	}
 }
 
-func TestAdminCreateUser_Success(t *testing.T) {
+func TestAdminCreateUser_NotAvailable(t *testing.T) {
 	s := newHandlerSuite(t)
 
 	adminID, _ := s.db.CreateUser("admin-user", models.RoleHumanAdmin)
@@ -881,32 +847,8 @@ func TestAdminCreateUser_Success(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 	resp, _ := s.app.Test(req)
-	if resp.StatusCode != 201 {
-		t.Fatalf("Expected 201 for admin user creation, got %d", resp.StatusCode)
-	}
-
-	user, err := s.db.GetUserByName("new-agent")
-	if err != nil || user == nil || user.Role != models.RoleNormalAI {
-		t.Errorf("Expected created user with NORMAL_AI role, got: %+v (err=%v)", user, err)
-	}
-}
-
-func TestAdminCreateUser_InvalidRole(t *testing.T) {
-	s := newHandlerSuite(t)
-
-	adminID, _ := s.db.CreateUser("admin-inv", models.RoleHumanAdmin)
-	bearerToken := "admin-invalid-role-token"
-	s.db.CreateTokenWithUser(adminID, "admin-inv", hashToken(bearerToken))
-
-	body := map[string]interface{}{"username": "bad-agent", "role": "INVALID_ROLE"}
-	req := httptest.NewRequest("POST", "/api/admin/users", bytes.NewReader(mustJSON(body)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+bearerToken)
-	resp, _ := s.app.Test(req)
 	if resp.StatusCode == 201 {
-		t.Error("Expected error for invalid role in user creation")
-	} else if resp.StatusCode != 400 && resp.StatusCode != 422 {
-		t.Logf("Invalid role returned %d", resp.StatusCode)
+		t.Fatal("HTTP must not create users; use goban-user-cli against the database")
 	}
 }
 

@@ -25,9 +25,9 @@ type BulkArchiveRequest struct {
 
 // ArchiveResponse represents the response from an archive operation.
 type ArchiveResponse struct {
-	Status    string   `json:"status"`
-	Count     int      `json:"count,omitempty"`
-	NotFound  []string `json:"not_found,omitempty"`
+	Status   string   `json:"status"`
+	Count    int      `json:"count,omitempty"`
+	NotFound []string `json:"not_found,omitempty"`
 }
 
 // SingleArchive handles POST /api/archive/single - archives a single ticket (admin only).
@@ -304,12 +304,7 @@ func UnarchiveTicket(c *fiber.Ctx) error {
 				ticket.BoardID = req.BoardID
 			}
 			if req.Column != "" {
-				// Normalize column: ensure it has the proper suffix (e.g., "todo" -> "todo-0")
-				col := req.Column
-				if col == "todo" || col == "doing" || col == "done" {
-					col = col + "-0"
-				}
-				ticket.Column = col
+				ticket.Column = models.GetColumnID(req.Column)
 			}
 			ticket.Archived = false
 			ticket.ArchivedAt = nil

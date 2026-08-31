@@ -27,31 +27,32 @@ var (
 const defaultMaxSubscribers = 100 // Default: 100 concurrent SSE connections maximum
 
 // Init initializes the SSE subsystem with a configurable buffer size.
+// Safe to call more than once: the previous broadcast channel is closed so the
+// old loop exits, and a new loop is started.
 func Init(bufferSize int) {
 	if bufferSize <= 0 {
 		bufferSize = 100
 	}
-	broadcastChan = make(chan models.SSEEvent, bufferSize)
+	ch := make(chan models.SSEEvent, bufferSize)
+
+	subMu.Lock()
+	old := broadcastChan
+	broadcastChan = ch
 	subscribers = make(map[int64]*models.Subscriber)
 	maxSubscribers = defaultMaxSubscribers
+	subMu.Unlock()
 
-	go broadcastLoop()
-	log.Println("SSE initialized with buffer size:", bufferSize, "| max subscribers:", maxSubscribers)
-}
-
-// SetMaxSubscribers configures the maximum concurrent SSE subscriber limit.
-// Call this before Init if you need a non-default value.
-func SetMaxSubscribers(max int) {
-	if max <= 0 {
-		max = defaultMaxSubscribers
+	if old != nil {
+		close(old)
 	}
-	maxSubscribers = max
-	log.Println("SSE max subscribers configured:", maxSubscribers)
+
+	go broadcastLoop(ch)
+	log.Println("SSE initialized with buffer size:", bufferSize, "| max subscribers:", defaultMaxSubscribers)
 }
 
 // broadcastLoop continuously broadcasts events to all subscribers.
-func broadcastLoop() {
-	for event := range broadcastChan {
+func broadcastLoop(ch <-chan models.SSEEvent) {
+	for event := range ch {
 		subMu.RLock()
 
 		for _, sub := range subscribers {
@@ -82,14 +83,21 @@ func Emit(eventType, ticketID, boardID string, payload fiber.Map) {
 		Type:      eventType,
 		TicketID:  ticketID,
 		BoardID:   boardID,
-		Payload:   payload,
+		Payload:   map[string]any(payload),
 		Timestamp: time.Now(),
 	}
 
+	subMu.RLock()
+	ch := broadcastChan
+	if ch == nil {
+		subMu.RUnlock()
+		return
+	}
 	select {
-	case broadcastChan <- event:
-		// Event queued successfully
+	case ch <- event:
+		subMu.RUnlock()
 	default:
+		subMu.RUnlock()
 		// Broadcast buffer full - drop event
 		atomic.AddInt64(&droppedEvents, 1)
 		log.Printf("Warning: Dropped SSE event (buffer full): %s/%s", eventType, ticketID)
@@ -100,12 +108,18 @@ func Emit(eventType, ticketID, boardID string, payload fiber.Map) {
 func GetMetrics() map[string]interface{} {
 	subMu.RLock()
 	count := len(subscribers)
+	ch := broadcastChan
 	subMu.RUnlock()
+	bufSize, bufUsed := 0, 0
+	if ch != nil {
+		bufSize = cap(ch)
+		bufUsed = len(ch)
+	}
 
 	return map[string]interface{}{
 		"subscribers":    count,
-		"buffer_size":    cap(broadcastChan),
-		"buffer_used":    len(broadcastChan),
+		"buffer_size":    bufSize,
+		"buffer_used":    bufUsed,
 		"dropped_events": atomic.LoadInt64(&droppedEvents),
 	}
 }
@@ -118,12 +132,13 @@ func Subscribe(boardID string, bufferSize int) (*models.Subscriber, error) {
 
 	subMu.RLock()
 	currentCount := len(subscribers)
+	limit := maxSubscribers
 	subMu.RUnlock()
 
 	// Enforce maximum subscriber limit to prevent DoS/resource exhaustion attacks.
-	if currentCount >= maxSubscribers {
-		log.Printf("Warning: SSE subscription rejected — limit reached (%d/%d)", currentCount, maxSubscribers)
-		return nil, fmt.Errorf("too many active subscribers (limit: %d)", maxSubscribers)
+	if currentCount >= limit {
+		log.Printf("Warning: SSE subscription rejected — limit reached (%d/%d)", currentCount, limit)
+		return nil, fmt.Errorf("too many active subscribers (limit: %d)", limit)
 	}
 
 	id := atomic.AddInt64(&nextSubscriberID, 1)
@@ -140,13 +155,13 @@ func Subscribe(boardID string, bufferSize int) (*models.Subscriber, error) {
 	actualCount := len(subscribers)
 	subMu.Unlock()
 
-	if actualCount >= maxSubscribers {
-		log.Printf("Warning: SSE subscriber count at maximum capacity (%d/%d)", actualCount, maxSubscribers)
-	} else if actualCount >= int(float64(maxSubscribers)*0.8) {
-		log.Printf("Notice: SSE subscriber count approaching limit (%d/%d)", actualCount, maxSubscribers)
+	if actualCount >= limit {
+		log.Printf("Warning: SSE subscriber count at maximum capacity (%d/%d)", actualCount, limit)
+	} else if actualCount >= int(float64(limit)*0.8) {
+		log.Printf("Notice: SSE subscriber count approaching limit (%d/%d)", actualCount, limit)
 	}
 
-	log.Printf("SSE subscriber %d connected (board: %s, total: %d/%d)", id, boardID, actualCount, maxSubscribers)
+	log.Printf("SSE subscriber %d connected (board: %s, total: %d/%d)", id, boardID, actualCount, limit)
 	return sub, nil
 }
 

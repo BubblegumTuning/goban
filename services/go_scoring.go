@@ -9,15 +9,15 @@ const komiPoints float64 = 6.5 // Standard komi for White under Japanese rules
 
 // ScoreResult holds the complete scoring breakdown.
 type ScoreResult struct {
-	BlackTerritory int     `json:"black_territory"`   // Empty points surrounded only by Black stones
-	WhiteTerritory int     `json:"white_territory"`   // Empty points surrounded only by White stones
-	BlackPrisoners int     `json:"black_prisoners"`  // Stones captured by Black (passed to caller)
-	WhitePrisoners int     `json:"white_prisoners"`  // Stones captured by White (passed to caller)
-	Komi           float64 `json:"komi"`             // Points awarded to White (standard 6.5)
-	BlackTotal     float64 `json:"black_total"`      // Black territory + White prisoners
-	WhiteTotal     float64 `json:"white_total"`      // White territory + komi + Black prisoners
-	Winner         string  `json:"winner"`           // "black", "white", or "draw"
-	Margin         float64 `json:"margin"`           // Point difference (positive = winner's lead)
+	BlackTerritory int     `json:"black_territory"` // Empty points surrounded only by Black stones
+	WhiteTerritory int     `json:"white_territory"` // Empty points surrounded only by White stones
+	BlackPrisoners int     `json:"black_prisoners"` // Stones captured by Black (passed to caller)
+	WhitePrisoners int     `json:"white_prisoners"` // Stones captured by White (passed to caller)
+	Komi           float64 `json:"komi"`            // Points awarded to White (standard 6.5)
+	BlackTotal     float64 `json:"black_total"`     // Black territory + White prisoners
+	WhiteTotal     float64 `json:"white_total"`     // White territory + komi + Black prisoners
+	Winner         string  `json:"winner"`          // "black", "white", or "draw"
+	Margin         float64 `json:"margin"`          // Point difference (positive = winner's lead)
 }
 
 // CalculateScore performs Japanese territory scoring on the final board.
@@ -44,7 +44,7 @@ func CalculateScore(board [][]int, blackPrisoners int, whitePrisoners int) Score
 	}
 
 	blackTotal := float64(blackTerritory + whitePrisoners)
-	whiteTotal := float64(whiteTerritory + blackPrisoners) + komiPoints
+	whiteTotal := float64(whiteTerritory+blackPrisoners) + komiPoints
 
 	var winner string
 	var margin float64

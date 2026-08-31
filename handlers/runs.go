@@ -50,12 +50,14 @@ func handleCreateRun(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create run"})
 	}
 
-	dbStore.CreateActivityLog(&models.ActivityLog{
+	if _, err := dbStore.CreateActivityLog(&models.ActivityLog{
 		TicketID:  ticketID,
-		EventType: models.ActivityClaimed,
+		EventType: models.ActivityRunStarted,
 		Actor:     actor,
 		NewState:  strPtr("active"),
-	})
+	}); err != nil {
+		log.Printf("CreateActivityLog failed for run create ticket %s: %v", ticketID, err)
+	}
 
 	sse.Emit("ticket_update", ticketID, c.Params("boardId"), fiber.Map{"action": "run_created"})
 
@@ -133,14 +135,16 @@ func handleUpdateRun(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to update run"})
 	}
 
-	dbStore.CreateActivityLog(&models.ActivityLog{
+	if _, err := dbStore.CreateActivityLog(&models.ActivityLog{
 		TicketID:  ticketID,
-		EventType: models.ActivityCompleted,
+		EventType: models.ActivityRunUpdated,
 		Actor:     actor,
 		NewState:  strPtr(outcome),
-	})
+	}); err != nil {
+		log.Printf("CreateActivityLog failed for run update ticket %s: %v", ticketID, err)
+	}
 
-	sse.Emit("ticket_update", ticketID, c.Params("boardId"), fiber.Map{"action": "run_created"})
+	sse.Emit("ticket_update", ticketID, c.Params("boardId"), fiber.Map{"action": "run_updated"})
 
 	return c.JSON(fiber.Map{"status": "updated", "run_id": runID})
 }
@@ -174,5 +178,4 @@ func RegisterRunRoutes(app *fiber.App) {
 	runGroup.Get("", handleGetRuns)
 	runGroup.Get("/active", handleGetActiveRun)
 	runGroup.Patch("", handleUpdateRun)
-
 }

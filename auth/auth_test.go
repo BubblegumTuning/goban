@@ -38,8 +38,6 @@ func readBody(b interface{ Read([]byte) (int, error) }) string {
 	return string(buf[:n])
 }
 
-
-
 // ============================================================================
 // Token Hashing & Generation Tests
 
@@ -623,62 +621,6 @@ func TestParseJWT_NoSecret(t *testing.T) {
 
 // ============================================================================
 // Middleware Tests (using Fiber test app + httptest)
-
-func TestAuthMiddleware_MissingHeader(t *testing.T) {
-	defer resetAuthState()
-
-	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
-		return AuthMiddleware(c)
-	})
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.SendString("ok")
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	resp, _ := app.Test(req)
-	if resp == nil || resp.StatusCode < 400 {
-		t.Errorf("Expected client/server error for missing Authorization header, got status %d", func() int { if resp != nil { return resp.StatusCode }; return 0 }())
-	}
-}
-
-func TestAuthMiddleware_InvalidFormat(t *testing.T) {
-	defer resetAuthState()
-
-	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
-		return AuthMiddleware(c)
-	})
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.SendString("ok")
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Basic abc123")
-	resp, _ := app.Test(req)
-	if resp == nil || resp.StatusCode < 400 {
-		t.Errorf("Expected client/server error for non-Bearer auth header, got status %d", func() int { if resp != nil { return resp.StatusCode }; return 0 }())
-	}
-}
-
-func TestAuthMiddleware_EmptyToken(t *testing.T) {
-	defer resetAuthState()
-
-	app := fiber.New()
-	app.Use(func(c *fiber.Ctx) error {
-		return AuthMiddleware(c)
-	})
-	app.Get("/test", func(c *fiber.Ctx) error {
-		return c.SendString("ok")
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("Authorization", "Bearer ") // Empty token after Bearer
-	resp, _ := app.Test(req)
-	if resp == nil || resp.StatusCode < 400 {
-		t.Errorf("Expected client/server error for empty Bearer token, got status %d", func() int { if resp != nil { return resp.StatusCode }; return 0 }())
-	}
-}
 
 func TestSendAuthError_Returns401(t *testing.T) {
 	defer resetAuthState()

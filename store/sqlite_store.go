@@ -94,13 +94,14 @@ func (s *SQLiteStore) AddTaskLink(parentID, childID string) error {
 	}
 
 	_, err = tx.Exec(`INSERT OR IGNORE INTO task_links (parent_id, child_id) VALUES (?, ?)`, parentID, childID)
-	if err == nil {
-		err = tx.Commit()
-	} else {
-		tx.Rollback()
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("AddTaskLink exec: %w", err)
 	}
-
-	return fmt.Errorf("AddTaskLink exec: %w", err)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("AddTaskLink commit: %w", err)
+	}
+	return nil
 }
 
 // RemoveTaskLink deletes a parent-child dependency.
@@ -625,13 +626,13 @@ func (s *SQLiteStore) CreateOrGetTicket(t *models.Ticket) (*models.Ticket, error
 		`, t.IdempotencyKey)
 
 		var (
-			labelsJSON     []byte
-			dueDateStr     sql.NullString
-			subtasksJSON   []byte
-			commentsJSON   []byte
-			archivedInt    int
-			archivedAtStr  sql.NullString
-			archivedByVal  sql.NullInt64
+			labelsJSON    []byte
+			dueDateStr    sql.NullString
+			subtasksJSON  []byte
+			commentsJSON  []byte
+			archivedInt   int
+			archivedAtStr sql.NullString
+			archivedByVal sql.NullInt64
 		)
 
 		result := &models.Ticket{}
@@ -1400,7 +1401,7 @@ func (s *SQLiteStore) GetTicketsWithFilter(allowedColumns []string, p Pagination
 	query := "SELECT id, title, description, priority, assignee, column, board_id," +
 		"labels, due_date, subtasks, comments, archived, archived_at, archived_by," +
 		"created_at, updated_at FROM tickets" + whereClause +
-		" ORDER BY created_at DESC LIMIT ? OFFSET ?" 
+		" ORDER BY created_at DESC LIMIT ? OFFSET ?"
 
 	queryArgs := append(args, limit, offset)
 	rows, err := s.db.Query(query, queryArgs...)

@@ -25,7 +25,7 @@ func StrictLimiter() fiber.Handler {
 	})
 }
 
-// ModerateLimiter is used on endpoints like /api/v1/register and claim operations.
+// ModerateLimiter is used on POST /api/v1/register.
 // 10 requests per minute — prevents abuse while allowing normal usage.
 func ModerateLimiter() fiber.Handler {
 	return limiter.New(limiter.Config{
@@ -49,6 +49,22 @@ func GameLimiter() fiber.Handler {
 		Expiration: 1 * time.Minute,
 		LimitReached: func(c *fiber.Ctx) error {
 			log.Printf("[RATE-LIMIT] Request blocked by game limiter from %s to %s", c.IP(), c.Path())
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error":   "rate limit exceeded",
+				"message": "too many requests — slow down",
+			})
+		},
+	})
+}
+
+// TicketActionLimiter is used on ticket mutation endpoints (move, claim, release).
+// 30 requests per minute — allows reasonable workflow speed without abuse.
+func TicketActionLimiter() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        30,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			log.Printf("[RATE-LIMIT] Request blocked by ticket action limiter from %s to %s", c.IP(), c.Path())
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"error":   "rate limit exceeded",
 				"message": "too many requests — slow down",

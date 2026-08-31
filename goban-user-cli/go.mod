@@ -1,6 +1,6 @@
 module goban-user-cli
 
-go 1.21
+go 1.24.0
 
 require (
 	github.com/spf13/cobra v1.8.0
@@ -27,5 +27,5 @@ require (
 	github.com/valyala/fasthttp v1.51.0 // indirect
 	github.com/valyala/tcplisten v1.0.0 // indirect
 	golang.org/x/crypto v0.26.0 // indirect
-	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
 )

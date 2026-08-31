@@ -147,9 +147,11 @@ func truncateTime(ts string) string {
 	return parsed.Format("2006-01-02 15:04")
 }
 
-var summaryFlag   string
-var outcomeFlag   string
-var runIDFlag     int64
+var (
+	summaryFlag string
+	outcomeFlag string
+	runIDFlag   int64
+)
 
 func init() {
 	rootCmd.AddCommand(runsCmd)

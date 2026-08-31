@@ -40,10 +40,12 @@ func unsetEnv(t *testing.T, key string) func() {
 // clearConfigEnvs unsets all config-related env vars and returns cleanup.
 func clearConfigEnvs(t *testing.T) func() {
 	t.Helper()
-	vars := []string{"GOBAN_CONFIG", "GOBAN_PORT", "LOG_LEVEL", "DB_TYPE", "DB_PATH",
+	vars := []string{
+		"GOBAN_CONFIG", "GOBAN_CONFIG_PATH", "GOBAN_PORT", "LOG_LEVEL", "DB_TYPE", "DB_PATH",
 		"DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME", "GOBAN_STATIC_PATH",
 		"GOBAN_JWT_SECRET", "GOBAN_JWT_VALIDITY", "GOBAN_REFRESH_GRACE_PERIOD",
-		"GOBAN_CORS_ORIGINS", "GOBAN_DEBUG"}
+		"GOBAN_CORS_ORIGINS", "GOBAN_DEBUG",
+	}
 	old := make(map[string]string)
 	var existed []string
 
@@ -84,9 +86,9 @@ func TestResolveConfigPath(t *testing.T) {
 
 		tmpDir := t.TempDir()
 		gobanDir := filepath.Join(tmpDir, ".goban")
-		os.MkdirAll(gobanDir, 0755)
+		os.MkdirAll(gobanDir, 0o755)
 		configFile := filepath.Join(gobanDir, "goban.toml")
-		os.WriteFile(configFile, []byte("port = \"9090\""), 0644)
+		os.WriteFile(configFile, []byte("port = \"9090\""), 0o644)
 
 		homeCleanup := setEnv(t, "HOME", tmpDir)
 		defer homeCleanup()
@@ -114,9 +116,9 @@ func TestResolveConfigPath(t *testing.T) {
 	t.Run("GOBAN_CONFIG overrides ~/.goban/goban.toml even when it exists", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		gobanDir := filepath.Join(tmpDir, ".goban")
-		os.MkdirAll(gobanDir, 0755)
+		os.MkdirAll(gobanDir, 0o755)
 		configFile := filepath.Join(gobanDir, "goban.toml")
-		os.WriteFile(configFile, []byte("port = \"9090\""), 0644)
+		os.WriteFile(configFile, []byte("port = \"9090\""), 0o644)
 
 		homeCleanup := setEnv(t, "HOME", tmpDir)
 		defer homeCleanup()
@@ -127,6 +129,30 @@ func TestResolveConfigPath(t *testing.T) {
 		result := ResolveConfigPath()
 		if result != "/explicit/config.toml" {
 			t.Errorf("expected /explicit/config.toml (from GOBAN_CONFIG), got %s", result)
+		}
+	})
+
+	t.Run("GOBAN_CONFIG_PATH is accepted as alias", func(t *testing.T) {
+		cleanup := unsetEnv(t, "GOBAN_CONFIG")
+		defer cleanup()
+		pathCleanup := setEnv(t, "GOBAN_CONFIG_PATH", "/alias/goban.toml")
+		defer pathCleanup()
+		result := ResolveConfigPath()
+		if result != "/alias/goban.toml" {
+			t.Errorf("expected /alias/goban.toml from GOBAN_CONFIG_PATH, got %s", result)
+		}
+	})
+
+	t.Run("tilde in GOBAN_CONFIG expands to home", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		homeCleanup := setEnv(t, "HOME", tmpDir)
+		defer homeCleanup()
+		envCleanup := setEnv(t, "GOBAN_CONFIG", "~/goban.toml")
+		defer envCleanup()
+		result := ResolveConfigPath()
+		want := filepath.Join(tmpDir, "goban.toml")
+		if result != want {
+			t.Errorf("expected %s, got %s", want, result)
 		}
 	})
 }
@@ -254,7 +280,7 @@ func TestParseTOML(t *testing.T) {
 		input := `port = "9090"
 log_level = "debug"
 db_type = "postgres"`
-		cfg := parseTOML(input)
+		cfg, _ := decodeTOML(input)
 
 		if cfg.Port != "9090" {
 			t.Errorf("expected port 9090, got %s", cfg.Port)
@@ -269,7 +295,7 @@ db_type = "postgres"`
 
 	t.Run("returns empty Config for malformed TOML", func(t *testing.T) {
 		input := `port = [INVALID TOML {{{`
-		cfg := parseTOML(input)
+		cfg, _ := decodeTOML(input)
 
 		if cfg.Port != "" {
 			t.Errorf("expected empty port for malformed TOML, got %s", cfg.Port)
@@ -277,7 +303,7 @@ db_type = "postgres"`
 	})
 
 	t.Run("empty string returns zero Config", func(t *testing.T) {
-		cfg := parseTOML("")
+		cfg, _ := decodeTOML("")
 		if cfg.Port != "" || cfg.DBType != "" {
 			t.Errorf("expected all-zero config for empty input, got %+v", cfg)
 		}
@@ -288,10 +314,34 @@ db_type = "postgres"`
 		defer cleanup()
 
 		input := `port = "${MY_PORT}"`
-		cfg := parseTOML(input)
+		cfg, _ := decodeTOML(input)
 
 		if cfg.Port != "7777" {
 			t.Errorf("expected port 7777 from env expansion, got %s", cfg.Port)
+		}
+	})
+}
+
+func TestOverlayDefinedBool(t *testing.T) {
+	t.Run("defined false overrides default true", func(t *testing.T) {
+		dst := true
+		overlayDefinedBool(&dst, false, true)
+		if dst {
+			t.Fatal("defined false must override default true")
+		}
+	})
+	t.Run("undefined leaves default true", func(t *testing.T) {
+		dst := true
+		overlayDefinedBool(&dst, false, false)
+		if !dst {
+			t.Fatal("undefined key must leave default true")
+		}
+	})
+	t.Run("defined true overrides default false", func(t *testing.T) {
+		dst := false
+		overlayDefinedBool(&dst, true, true)
+		if !dst {
+			t.Fatal("defined true must override default false")
 		}
 	})
 }
@@ -478,80 +528,14 @@ func TestValidateConfig(t *testing.T) {
 	})
 }
 
-// --- NewLogFilter tests ---
-
-func TestNewLogFilter(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"debug level", "debug", "debug"},
-		{"info level", "info", "info"},
-		{"warn level", "warn", "warn"},
-		{"error level", "error", "error"},
-		{"uppercase normalized to lowercase", "DEBUG", "debug"},
-		{"mixed case normalized", "Info", "info"},
-		{"empty string defaults to info", "", "info"},
+func TestRequireJWTSecret(t *testing.T) {
+	if err := RequireJWTSecret(""); err == nil {
+		t.Fatal("expected error for empty JWT secret")
+	} else if !strings.Contains(err.Error(), "GOBAN_JWT_SECRET") {
+		t.Errorf("unexpected error: %v", err)
 	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			lf := NewLogFilter(tc.input)
-			if lf.level != tc.want {
-				t.Errorf("NewLogFilter(%q).level = %q, want %q", tc.input, lf.level, tc.want)
-			}
-		})
-	}
-}
-
-// --- ShouldLog tests ---
-
-func TestShouldLog(t *testing.T) {
-	// Reset global Debug flag that may have been set by other tests.
-	prevDebug := Debug
-	Debug = false
-	defer func() { Debug = prevDebug }()
-
-	tests := []struct {
-		name       string
-		filter     string
-		msgLevel   string
-		wantResult bool
-	}{
-		{"debug filter logs debug", "debug", "debug", true},
-		{"debug filter logs info", "debug", "info", true},
-		{"debug filter logs warn", "debug", "warn", true},
-		{"debug filter logs error", "debug", "error", true},
-
-		{"info filter does not log debug", "info", "debug", true},
-		{"info filter logs info", "info", "info", true},
-		{"info filter logs warn", "info", "warn", true},
-		{"info filter logs error", "info", "error", true},
-
-		{"warn filter does not log debug", "warn", "debug", false},
-		{"warn filter does not log info", "warn", "info", false},
-		{"warn filter logs warn", "warn", "warn", true},
-		{"warn filter logs error", "warn", "error", true},
-
-		{"error filter only logs error", "error", "debug", false},
-		{"error filter does not log info", "error", "info", false},
-		{"error filter does not log warn", "error", "warn", false},
-		{"error filter logs error", "error", "error", true},
-
-		{"unknown filter level defaults to info behavior", "verbose", "debug", true},
-		{"unknown msg level defaults to info weight", "info", "trace", true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			lf := NewLogFilter(tc.filter)
-			got := lf.ShouldLog(tc.msgLevel)
-			if got != tc.wantResult {
-				t.Errorf("ShouldLog(%q) with filter %q = %v, want %v",
-					tc.msgLevel, tc.filter, got, tc.wantResult)
-			}
-		})
+	if err := RequireJWTSecret("not-empty"); err != nil {
+		t.Errorf("expected nil for set secret, got %v", err)
 	}
 }
 
@@ -569,7 +553,7 @@ log_level = "debug"
 db_type = "postgres"
 db_host = "localhost"
 db_name = "testdb"`
-		os.WriteFile(configFile, []byte(content), 0644)
+		os.WriteFile(configFile, []byte(content), 0o644)
 
 		cfg := LoadConfig(configFile)
 
@@ -595,7 +579,7 @@ db_name = "testdb"`
 
 		tmpDir := t.TempDir()
 		configFile := filepath.Join(tmpDir, "goban.toml")
-		os.WriteFile(configFile, []byte(`port = "9090"`), 0644)
+		os.WriteFile(configFile, []byte(`port = "9090"`), 0o644)
 
 		cfg := LoadConfig(configFile)
 		if cfg.Port != "3000" {
@@ -610,6 +594,9 @@ db_name = "testdb"`
 		cfg := LoadConfig("/nonexistent/path/goban.toml")
 		if cfg.Port != "8080" {
 			t.Errorf("expected default port 8080 for missing file, got %s", cfg.Port)
+		}
+		if cfg.MCPEnabled {
+			t.Errorf("expected MCP disabled by default when file is missing, got true")
 		}
 	})
 
@@ -629,11 +616,39 @@ db_name = "testdb"`
 
 		tmpDir := t.TempDir()
 		configFile := filepath.Join(tmpDir, "goban.toml")
-		os.WriteFile(configFile, []byte(`port = "9090"`), 0644)
+		os.WriteFile(configFile, []byte(`port = "9090"`), 0o644)
 
 		cfg := LoadConfig(configFile)
 		if len(cfg.Boards) < 2 {
 			t.Errorf("expected at least 2 default boards when file has none, got %d", len(cfg.Boards))
+		}
+	})
+
+	t.Run("TOML mcp_enabled false is respected", func(t *testing.T) {
+		cleanup := clearConfigEnvs(t)
+		defer cleanup()
+
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "goban.toml")
+		os.WriteFile(configFile, []byte("mcp_enabled = false\n"), 0o644)
+
+		cfg := LoadConfig(configFile)
+		if cfg.MCPEnabled {
+			t.Fatal("expected mcp_enabled=false in TOML to disable MCP")
+		}
+	})
+
+	t.Run("TOML mcp_enabled true is respected", func(t *testing.T) {
+		cleanup := clearConfigEnvs(t)
+		defer cleanup()
+
+		tmpDir := t.TempDir()
+		configFile := filepath.Join(tmpDir, "goban.toml")
+		os.WriteFile(configFile, []byte("mcp_enabled = true\n"), 0o644)
+
+		cfg := LoadConfig(configFile)
+		if !cfg.MCPEnabled {
+			t.Fatal("expected mcp_enabled=true in TOML to enable MCP")
 		}
 	})
 }

@@ -19,11 +19,11 @@ func newEmptyBoard(size int) [][]int {
 
 func TestInBounds(t *testing.T) {
 	tests := []struct {
-		name  string
-		row   int
-		col   int
-		size  int
-		want  bool
+		name string
+		row  int
+		col  int
+		size int
+		want bool
 	}{
 		{"center of 9x9", 4, 4, 9, true},
 		{"top-left corner", 0, 0, 9, true},
@@ -176,10 +176,10 @@ func TestValidateMove(t *testing.T) {
 		// Create a position where placing Black at (2,2) would have no liberties
 		// and capture nothing: surround center with White stones on 5x5 board
 		small := newEmptyBoard(5)
-		small[1][2] = White  // above center
-		small[3][2] = White  // below center
-		small[2][1] = White  // left of center
-		small[2][3] = White  // right of center
+		small[1][2] = White // above center
+		small[3][2] = White // below center
+		small[2][1] = White // left of center
+		small[2][3] = White // right of center
 		// Each white stone has liberties on the outside edges, so Black at (2,2) captures nothing
 		err := ValidateMove(small, Black, 2, 2, nil)
 		if err != ErrSuicide {
@@ -189,10 +189,10 @@ func TestValidateMove(t *testing.T) {
 
 	t.Run("move that captures opponent is valid despite filling last liberty", func(t *testing.T) {
 		small := newEmptyBoard(5)
-		small[3][2] = White   // single white stone
-		small[2][2] = Black   // above - blocks one side
-		small[3][1] = Black   // left - blocks one side
-		small[3][3] = Black   // right - blocks one side
+		small[3][2] = White // single white stone
+		small[2][2] = Black // above - blocks one side
+		small[3][1] = Black // left - blocks one side
+		small[3][3] = Black // right - blocks one side
 		// White at (3,2) has only liberty at (4,2). Black playing there captures it.
 		err := ValidateMove(small, Black, 4, 2, nil)
 		if err != nil {
@@ -377,10 +377,10 @@ func TestPlaceStone(t *testing.T) {
 
 	t.Run("captures opponent group with zero liberties", func(t *testing.T) {
 		board := newEmptyBoard(5)
-		board[2][1] = White   // white stone to capture - single stone at center-left
-		board[1][1] = Black   // above white
-		board[3][1] = Black   // below white
-		board[2][0] = Black   // left of white (edge)
+		board[2][1] = White // white stone to capture - single stone at center-left
+		board[1][1] = Black // above white
+		board[3][1] = Black // below white
+		board[2][0] = Black // left of white (edge)
 		// White at (2,1) has only liberty at (2,2). Playing Black there captures it.
 		newBoard, captures := PlaceStone(board, Black, 2, 2)
 		if len(captures) != 1 {
@@ -461,14 +461,14 @@ func TestGetKoPoint(t *testing.T) {
 
 	t.Run("returns ko point for single stone capture creating ko shape", func(t *testing.T) {
 		prev := newEmptyBoard(5)
-		prev[2][1] = White   // single white stone - only liberty is (2,0)
-		prev[1][1] = Black   // above white
-		prev[3][1] = Black   // below white
-		prev[2][2] = Black   // right of white
+		prev[2][1] = White // single white stone - only liberty is (2,0)
+		prev[1][1] = Black // above white
+		prev[3][1] = Black // below white
+		prev[2][2] = Black // right of white
 
 		newB := deepCopyBoard(prev)
-		newB[2][0] = Black   // black plays at (2,0), adjacent to white
-		newB[2][1] = Empty   // captures the single white stone at (2,1)
+		newB[2][0] = Black // black plays at (2,0), adjacent to white
+		newB[2][1] = Empty // captures the single white stone at (2,1)
 
 		result := GetKoPoint(prev, newB, models.Point{Row: 2, Col: 0})
 		if result == nil {

@@ -11,11 +11,11 @@ import (
 
 func TestValidateAgentName_Valid(t *testing.T) {
 	validNames := []string{
-		"a",                // Minimum length (1 char)
-		"user",             // Simple name
-		"user-1",           // With hyphen
-		"user_2",           // With underscore
-		"AgentBot99",       // Mixed case + digits
+		"a",                                 // Minimum length (1 char)
+		"user",                              // Simple name
+		"user-1",                            // With hyphen
+		"user_2",                            // With underscore
+		"AgentBot99",                        // Mixed case + digits
 		strings.Repeat("a", MaxUsernameLen), // Maximum length (32 chars)
 	}
 
@@ -50,11 +50,11 @@ func TestValidateAgentName_TooLong(t *testing.T) {
 
 func TestValidateAgentName_InvalidCharacters(t *testing.T) {
 	invalidNames := []string{
-		"user name",    // Space not allowed
-		"hello@world",  // @ not allowed
+		"user name",      // Space not allowed
+		"hello@world",    // @ not allowed
 		"name.with.dots", // Dots not allowed
-		"slash/name",   // Slash not allowed
-		"name:colon",   // Colon not allowed
+		"slash/name",     // Slash not allowed
+		"name:colon",     // Colon not allowed
 	}
 
 	for _, name := range invalidNames {
@@ -76,7 +76,7 @@ func TestValidateAgentName_InvalidCharacters(t *testing.T) {
 func TestValidateTitle_Valid(t *testing.T) {
 	validTitles := []string{
 		"a",                              // Minimum (1 char)
-		"Fix the login bug",             // Normal title
+		"Fix the login bug",              // Normal title
 		strings.Repeat("x", MaxTitleLen), // Maximum length (256 chars)
 	}
 
@@ -123,8 +123,8 @@ func TestValidateTitle_WhitespaceOnly(t *testing.T) {
 
 func TestValidateDescription_Valid(t *testing.T) {
 	validDescs := []string{
-		"",                              // Empty description is allowed
-		"Short description",            // Normal description
+		"",                                     // Empty description is allowed
+		"Short description",                    // Normal description
 		strings.Repeat("x", MaxDescriptionLen), // Maximum length (4096 chars)
 	}
 
@@ -159,12 +159,12 @@ func TestNormalizePriority_ValidInputs(t *testing.T) {
 		{"medium", "medium", true},
 		{"high", "high", true},
 		{"critical", "critical", true},
-		{"LOW", "low", true},        // Uppercase normalization
-		{"High", "high", true},      // Mixed case normalization
+		{"LOW", "low", true},           // Uppercase normalization
+		{"High", "high", true},         // Mixed case normalization
 		{"CRITICAL", "critical", true}, // All uppercase normalization
-		{" high ", "high", true},    // Whitespace trimming
-		{"  LOW  ", "low", true},    // Trimming + lowercase
-		{"", "", true},              // Empty is acceptable (unspecified)
+		{" high ", "high", true},       // Whitespace trimming
+		{"  LOW  ", "low", true},       // Trimming + lowercase
+		{"", "", true},                 // Empty is acceptable (unspecified)
 	}
 
 	for _, tc := range tests {
@@ -198,9 +198,9 @@ func TestNormalizePriority_InvalidInputs(t *testing.T) {
 func TestValidatePriority_Valid(t *testing.T) {
 	validPriorities := []string{
 		"low", "medium", "high", "critical", // Exact matches
-		"LOW", "HIGH", "CRITICAL",           // Uppercase variants
-		" High ", " low ",                   // Whitespace-padded
-		"",                                  // Empty (unspecified — valid)
+		"LOW", "HIGH", "CRITICAL", // Uppercase variants
+		" High ", " low ", // Whitespace-padded
+		"", // Empty (unspecified — valid)
 	}
 
 	for _, p := range validPriorities {
@@ -237,10 +237,10 @@ func TestValidatePriority_Invalid(t *testing.T) {
 
 func TestValidateAssignee_Valid(t *testing.T) {
 	validAssignees := []string{
-		"",                    // Empty means unassigned — valid
-		"agent-a",             // Normal assignee name
-		"user_123",            // With underscore and digits
-		strings.Repeat("a", MaxAssigneeLen),   // Maximum length (32 chars)
+		"",                                  // Empty means unassigned — valid
+		"agent-a",                           // Normal assignee name
+		"user_123",                          // With underscore and digits
+		strings.Repeat("a", MaxAssigneeLen), // Maximum length (32 chars)
 	}
 
 	for _, a := range validAssignees {
@@ -277,10 +277,10 @@ func TestValidateAssignee_InvalidCharacters(t *testing.T) {
 
 func TestValidateLabels_Valid(t *testing.T) {
 	validCases := [][]string{
-		nil,                         // Nil labels — valid
-		{},                          // Empty slice — valid
-		{"frontend"},                // Single label
-		{"bug", "urgent", "v2.0"},   // Multiple labels
+		nil,                       // Nil labels — valid
+		{},                        // Empty slice — valid
+		{"frontend"},              // Single label
+		{"bug", "urgent", "v2.0"}, // Multiple labels
 		strings.Split(strings.Repeat("a,", MaxLabelsCount-1)+"a", ","), // Maximum count (10)
 	}
 
@@ -324,9 +324,9 @@ func TestValidateLabels_IndividualLabelTooLong(t *testing.T) {
 
 func TestValidateComment_Valid(t *testing.T) {
 	validComments := []string{
-		"a",                                     // Minimum (1 char)
+		"a", // Minimum (1 char)
 		"This is a helpful comment about the fix.", // Normal comment
-		strings.Repeat("x", MaxCommentBodyLen),   // Maximum length (4096 chars)
+		strings.Repeat("x", MaxCommentBodyLen),     // Maximum length (4096 chars)
 	}
 
 	for _, c := range validComments {
@@ -363,8 +363,8 @@ func TestValidateComment_TooLong(t *testing.T) {
 
 func TestValidateSubtaskTitle_Valid(t *testing.T) {
 	validTitles := []string{
-		"a",                                  // Minimum (1 char after trim)
-		"Write unit tests",                  // Normal subtask title
+		"a",                                     // Minimum (1 char after trim)
+		"Write unit tests",                      // Normal subtask title
 		strings.Repeat("x", MaxSubtaskTitleLen), // Maximum length (256 chars)
 	}
 
@@ -549,9 +549,9 @@ func TestValidateRunOutcome_Invalid(t *testing.T) {
 
 func TestValidateRunSummary_Valid(t *testing.T) {
 	validSummaries := []string{
-		"",                                     // Empty is allowed
-		"Short summary",                        // Normal summary
-		strings.Repeat("x", MaxRunSummaryLen),  // Maximum length (512 chars)
+		"",                                    // Empty is allowed
+		"Short summary",                       // Normal summary
+		strings.Repeat("x", MaxRunSummaryLen), // Maximum length (512 chars)
 	}
 
 	for _, s := range validSummaries {
@@ -577,9 +577,9 @@ func TestValidateRunSummary_TooLong(t *testing.T) {
 
 func TestValidateRunMetadata_Valid(t *testing.T) {
 	validMetadata := []string{
-		"",                                      // Empty is allowed
-		"Key metadata here",                     // Normal metadata
-		strings.Repeat("x", MaxRunMetadataLen),  // Maximum length (1024 chars)
+		"",                                     // Empty is allowed
+		"Key metadata here",                    // Normal metadata
+		strings.Repeat("x", MaxRunMetadataLen), // Maximum length (1024 chars)
 	}
 
 	for _, m := range validMetadata {
@@ -619,9 +619,9 @@ func TestValidateTicketID_Valid(t *testing.T) {
 
 func TestValidateTicketID_Invalid(t *testing.T) {
 	invalidIDs := []string{
-		"",                     // Empty
-		"ticket",              // Too short (no hex suffix)
-		"board-abc123def456",  // Wrong prefix
+		"",                   // Empty
+		"ticket",             // Too short (no hex suffix)
+		"board-abc123def456", // Wrong prefix
 	}
 
 	for _, id := range invalidIDs {
@@ -651,8 +651,8 @@ func TestValidateGameID_Valid(t *testing.T) {
 
 func TestValidateGameID_Invalid(t *testing.T) {
 	invalidIDs := []string{
-		"",      // Empty
-		"   ",   // Whitespace only
+		"",    // Empty
+		"   ", // Whitespace only
 	}
 
 	for _, id := range invalidIDs {

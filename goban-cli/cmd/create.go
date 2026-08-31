@@ -47,8 +47,8 @@ var createCmd = &cobra.Command{
 		ctx := cmd.Context()
 
 		idempKey, _ := cmd.Flags().GetString("idempotency-key")
-	parents, _ := cmd.Flags().GetStringSlice("parents")
-	ticket, classErr := client.SafeCreate(ctx, boardID, types.CreateTicketRequest{Title: title, Description: description, Column: column, BoardID: boardID, IdempotencyKey: idempKey, Parents: parents})
+		parents, _ := cmd.Flags().GetStringSlice("parents")
+		ticket, classErr := client.SafeCreate(ctx, boardID, types.CreateTicketRequest{Title: title, Description: description, Column: column, BoardID: boardID, IdempotencyKey: idempKey, Parents: parents})
 		if classErr != nil {
 			return classErr
 		}

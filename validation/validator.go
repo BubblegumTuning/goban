@@ -8,17 +8,17 @@ import (
 )
 
 const (
-	MaxTitleLen          = 256
-	MaxDescriptionLen    = 4096
-	MaxUsernameLen       = 32
-	MinUsernameLen       = 1
-	MaxAssigneeLen       = 32
-	MaxLabelLen          = 64
-	MaxLabelsCount       = 10
-	MaxCommentBodyLen    = 4096
-	MaxSubtaskTitleLen   = 256
-	MaxRunSummaryLen     = 512
-	MaxRunMetadataLen    = 1024
+	MaxTitleLen        = 256
+	MaxDescriptionLen  = 4096
+	MaxUsernameLen     = 32
+	MinUsernameLen     = 1
+	MaxAssigneeLen     = 32
+	MaxLabelLen        = 64
+	MaxLabelsCount     = 10
+	MaxCommentBodyLen  = 4096
+	MaxSubtaskTitleLen = 256
+	MaxRunSummaryLen   = 512
+	MaxRunMetadataLen  = 1024
 )
 
 // ValidBoardSizes is the set of acceptable Go board sizes.
